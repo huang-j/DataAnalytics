@@ -1,0 +1,96 @@
+<-- these are the imports from highcharts -->
+<-- this is all on JFiddle: https://jsfiddle.net/huangj/beco2opz/ -->
+<script src="https://code.highcharts.com/highcharts.js"></script>
+<script src="https://code.highcharts.com/highcharts-more.js"></script>
+<script src="https://code.highcharts.com/modules/exporting.js"></script>
+
+<div id="container" style="min-width: 310px; height: 400px; margin: 0 auto"></div>
+
+
+<-- the script -->
+<script>
+	$(function () {
+
+    Highcharts.chart('container', {
+
+        chart: {
+            type: 'columnrange',
+            // inverted is what makes the graph horizontal
+            inverted: true
+        },
+
+        title: {
+            text: 'Testing!!',
+        },
+
+        subtitle: {
+            text: 'test',
+        },
+				
+        // Note that since this is an inverted axis so the X actually corresponds to the Y
+        xAxis: {
+			categories: ['A', 'B', 'C']
+        },
+
+        yAxis: {
+            type: 'datetime',
+            // This doesn't seem to work properly. Haven't figured this part out
+            dateTimeLabelFormat: {
+                day: '%e. %b',
+                month: '%e. %b',
+            },
+            title: {
+                text: 'Date'
+            },
+
+            // This is currently just a hack to ensure specific axis range. Theoretically, I could probably grab the min and max based on the displayed min and max of another graph using a function. Need data to test though.
+            min: Date.UTC(2010, 0, 1),
+            max: Date.UTC(2010, 12, 31),
+            startOnTick: true,
+            endOnTick: false,
+        },
+
+        tooltip: {
+        	//the current tooltip (hover over the little boxes)
+        		// Note: a problem that might arise later is that the method that I found to implement stacked columns make the series name the same in each 'group' 
+          	formatter: function() {
+                return 'Started on: ' + Highcharts.dateFormat('%e - %b - %Y',
+                                              new Date(this.y));
+            }
+        },
+        
+        plotOptions: {
+        	// this is important to make sure that the stacking stays properly aligned
+            columnrange: {
+                 grouping: false
+        	  },
+            
+    		},
+        
+        legend: {
+            enabled: false
+        },
+
+       series: [{
+            name: 'Test time',
+            data: [
+            	// the [] gives an empty data point for the first X-value (A). There is another way to implement this using x = 0, x = 1 etc but this works for now.
+            	[],
+                [Date.UTC(2010, 00, 01), Date.UTC(2010, 00, 02)],
+                [Date.UTC(2010, 03, 28), Date.UTC(2010, 04, 01)],
+            ]
+        }, {
+            // can name this as whatever. This is what shows up as this.series
+            data: [
+                [Date.UTC(2010, 02, 01), Date.UTC(2010, 02, 02)],
+                [Date.UTC(2010, 04, 28), Date.UTC(2010, 05, 01)],
+                [Date.UTC(2010, 9, 01), Date.UTC(2010, 9, 02)],
+            ]
+            
+        }]
+
+    });
+
+});
+
+</script>
