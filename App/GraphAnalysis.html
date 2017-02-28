@@ -1,0 +1,525 @@
+"data:text/html;charset=UTF-8,
+<!DOCTYPE html>
+<html>
+<head>
+  <script type=\"text/javascript\" src=\"https://www.gstatic.com/charts/loader.js\"></script>
+  <script src=\"http://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js\"></script>
+  <link rel=\"stylesheet\" href=\"http://ajax.googleapis.com/ajax/libs/jqueryui/1.11.1/themes/smoothness/jquery-ui.css\" />
+  <script src=\"http://ajax.googleapis.com/ajax/libs/jqueryui/1.11.1/jquery-ui.min.js\"></script>
+  <script type=\"text/javascript\" src=\"https://www.google.com/jsapi\"></script>
+  <script src=\"https://code.highcharts.com/highcharts.js\"></script>
+  <script src=\"https://code.highcharts.com/highcharts-more.js\"></script>
+  <script src=\"https://code.highcharts.com/modules/exporting.js\"></script>
+  <script src=\"https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js\"></script>
+  <link rel=\"stylesheet\" type=\"stylesheet\" href=\"https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css\">
+
+<script type=\"text/javascript\">
+$(function () {
+  $('#graphs').bind('mousemove touchmove touchstart', function (e) {
+    var chart,point,i,event;
+    for (i = 0; i < Highcharts.charts.length; i = i + 1) {
+      chart = Highcharts.charts[i];
+      event = chart.pointer.normalize(e.originalEvent);
+      point = chart.series[0].searchPoint(event, true);
+      if (point) {point.highlight(e);}
+    };
+  });
+
+  Highcharts.Pointer.prototype.reset = function () {return undefined;};
+  Highcharts.Point.prototype.highlight = function (event) {
+      this.onMouseOver();
+      this.series.chart.tooltip.refresh(this);
+      this.series.chart.xAxis[0].drawCrosshair(event, this);
+  };
+  function syncExtremes(e) {
+      var thisChart = this.chart;
+      if (e.trigger !== 'syncExtremes') {
+          Highcharts.each(Highcharts.charts, function (chart) {
+              if (chart !== thisChart && chart !== Highcharts.charts[0]) {
+                  if (chart.xAxis[0].setExtremes) {
+                      chart.xAxis[0].setExtremes(e.min, e.max, undefined, false, { trigger: 'syncExtremes' });
+                  }
+              } else if (chart !== thisChart && chart == Highcharts.charts[0]) {
+                  if (chart.yAxis[0].setExtremes) {
+                      chart.yAxis[0].setExtremes(e.min, e.max, undefined, false, { trigger: 'syncExtremes' });
+                  }
+
+              }
+          });
+      };
+  };
+  
+  $(function() {
+      $('.sortable').sortable({
+         axis:'y',
+         delay: 2000,
+         distance: 50,
+      });
+  });
+
+  function parseDate(date){
+    var tempdate = date.split('-');
+    var newDate = (Date.UTC(tempdate[0], tempdate[1], tempdate[2] - 1));
+    return newDate;
+  };
+  
+  function addDays(date, mult){
+    var days = 0;
+    if(mult){
+      days = 86400000 * mult;
+    } else {
+      days = 86400000 * 10;
+    };
+    var tempdate = date + days;
+    return tempdate;
+  };
+
+  function assignGraphData(titles, sqldata){
+    var tempData = [],
+        temp = [],
+        thisTitles = titles;
+        thisData = sqldata.split(';');
+
+    for (var i = 0; i < thisTitles.length; i++){
+        tempData.push([]);
+    };
+
+    for (var i = 0; i < thisData.length; i++){
+      temp = thisData[i].split(',', 1);
+
+      if (thisTitles.indexOf(temp[0]) != -1){
+        tempData[thisTitles.indexOf(temp[0])].push(thisData[i]);
+      };
+    };
+    return tempData;
+
+  };
+
+  function assignMilestoneData(sqldata){
+    var tempData = [[],[],[]],
+        temp = [],
+        thisData = sqldata.split(';');
+
+    for (var i = 0; i < thisData.length; i++){
+      temp = thisData[i].split(',');
+      if (temp[3]){
+        temp3 = temp[3].split(':', 1);
+        temp[3] = temp3[0];
+      }
+      for(var j = 1; j < 4; j++){
+        tempData[j-1].push([parseDate(temp[0]), temp[j]]);
+      };
+
+    };
+    return tempData;
+  };
+
+  function createSeries(dataset){
+    console.log('instantiating series');
+    var tempseries = [];
+    console.log('Series = ');
+    console.log(tempseries);
+    console.log(tempseries[0]);
+    var thisData = dataset;
+
+    console.log('createSeries Start');
+    console.log(thisData);
+    console.log('thisData length = ' + thisData.length);      
+    console.log('thisData[0]length = ' + thisData[0].length);
+    console.log(tempseries);
+    if(thisData[0].length == 2){
+      console.log('entered here');
+      for (var i = 0; i < thisData.length; i++){
+        var temp = thisData[i];
+        tempseries.push([temp[0], parseFloat(temp[1])]);
+      };
+    }
+    else{
+      for (var i = 0; i < thisData.length; i++){
+        var temp = (thisData[i]+'').split(',');
+        console.log('Loop ' + i);
+        console.log(temp);
+        tempseries.push([parseDate(temp[1]), parseFloat(temp[2])]);
+      };
+    };
+    console.log('pre-sort');
+    console.log(tempseries);
+    tempseries.sort();
+    console.log('post-sort');
+    console.log(tempseries);
+    console.log('createSeries end');
+    var theseries = tempseries;
+    return theseries;
+  };
+
+  function addPhantoms(dataset){
+    console.log('addPhantoms start');
+    var thisData = dataset;
+    console.log(thisData);
+    var finalpoint = thisData[thisData.length - 1];
+    for(var i = 0; i < 3; i++){
+      var phantomdate = addDays(finalpoint[0], (i+1)/100);
+      thisData.push([phantomdate, finalpoint[1]]);
+    }
+    console.log(thisData);
+    console.log('addPhantoms end');
+    return thisData;
+
+  };
+  
+  function createTimelineSeries(cat) {
+    console.log('Timeline Start');
+    var NetTherapyList = String(\""& GraphAnalysis::TherapyList &"\");
+    var PrimarySurgery = String(\""& GraphAnalysis::PrimarySurgery &"\");
+    var SurgeryList = String(\""& GraphAnalysis::SurgeryList &"\");
+    var LiquidBiopsyList = String(\""&GraphAnalysis::LiqBiopsyList&"\");
+
+    
+    console.log(SurgeryList);
+    
+
+    if (NetTherapyList){
+      console.log('Therapy exists');
+      console.log(NetTherapyList);
+      cat.push('Therapy');
+      cat.push('Trials');
+    };
+    if (PrimarySurgery || SurgeryList){
+       console.log('Surgery Exists');
+       console.log(PrimarySurgery);
+       console.log(SurgeryList);
+       cat.push('Surgery');
+    };
+    if (LiquidBiopsyList){
+       console.log('Liq Bio Exists');
+       console.log(LiquidBiopsyList);
+       cat.push('LiqBio');
+    };
+
+    
+    var TempSurgeryList = SurgeryList.split(';');
+    var LiquidBiopsyList = LiquidBiopsyList.split(';');
+    var TherapyList = [[],[]];
+    var tseries = [];
+  
+    if (cat.indexOf('Therapy') >= 0 ){   
+      var TempTherapyList = NetTherapyList.split(';');
+      for (i = 0; i < TempTherapyList.length; i++){
+        var therapy = TempTherapyList[i].split(',', 1);
+        if(therapy[0].indexOf(\"djuvant\") >= 0 || therapy[0].indexOf('alliative') >= 0){
+          TherapyList[0].push(TempTherapyList[i]);
+        }
+        else{
+          TherapyList[1].push(TempTherapyList[i]);
+        };
+
+      };
+
+      for (i = 0; i < TherapyList.length; i++){
+        for (j = 0; j < TherapyList[i].length; j++){
+          var temp = TherapyList[i][j].split(',');
+          if(temp[0] != ''){
+            if(temp[2] == ''){
+              temp[2] = new Date().getTime();
+            } else { temp[2] = parseDate(temp[2]); };
+            
+            point = {
+              x: i,
+              therapytype: temp[0],
+              low: parseDate(temp[1]),
+              high: temp[2],
+              regimen: temp[3],
+            };
+            console.log(point);
+            tseries.push(point);
+          };
+        };
+      };
+    };
+  
+  if (cat.indexOf('Surgery') >= 0){
+    var tempsurgery = PrimarySurgery.split(',');
+console.log(tempsurgery.filter(Boolean));
+    if(tempsurgery.filter(Boolean) != [] && PrimarySurgery.length >= 3){
+      var tempdate = parseDate(tempsurgery[0]);
+      var tempdate2 = addDays(tempdate, 5);
+      tseries.push({
+        x: cat.indexOf('Surgery'),
+        low: tempdate,
+        high: tempdate2,
+        surgery: tempsurgery[1],
+        comments: 'Primary Surgery',
+      });
+    };
+    if(TempSurgeryList && TempSurgeryList != ''){
+      for (i = 0; i < TempSurgeryList.length; i++){
+        var temp = TempSurgeryList[i].split('~');
+        console.log('surgerylist');
+        console.log(temp);
+        if(temp.filter(Boolean) != []){
+          if (temp.length == 3){
+            tseries.push({
+              x: cat.indexOf('Surgery'),
+              low: parseDate(temp[0]),
+              high: addDays(parseDate(temp[0])),
+              surgery: temp[1],
+              comments: temp[2],
+            });
+          }
+          else{
+            tseries.push({
+              x: cat.indexOf('Surgery'),
+              low: parseDate(temp[0]),
+              high: addDays(parseDate(temp[0])),
+              surgery: temp[1],
+              comments: '',
+            });
+          };
+        };
+      };
+    };
+  };
+if (cat.indexOf('LiqBio') >= 0){
+for (i = 0; i < LiquidBiopsyList.length; i++){
+  tempdate = parseDate(LiquidBiopsyList[i]);
+  tempdate2 = addDays(tempdate, 5);
+  tseries.push({
+    x: cat.indexOf('LiqBio'),
+    low: tempdate,
+    high: tempdate2,
+  });
+};
+};
+console.log(tseries);
+return tseries;
+
+};
+
+
+Highcharts.theme = {colors: ['#2b908f', '#90ee7e', '#f45b5b', '#7798BF', '#aaeeee', '#ff0066', '#eeaaee','#55BF3B', '#DF5353', '#7798BF', '#aaeeee'],
+   chart: {backgroundColor: {linearGradient: { x1: 0, y1: 0, x2: 1, y2: 1 },stops: [[0, '#2a2a2b'],[1, '#3e3e40']]},style: {fontFamily: '\'Unica One\', sans-serif'},plotBorderColor: '#606063'},
+   title: {style: {color: '#E0E0E3',textTransform: 'uppercase',fontSize: '20px'}},
+   subtitle: {style: {color: '#E0E0E3',textTransform: 'uppercase'}},
+   xAxis: {gridLineColor: '#707073',labels: {style: {color: '#E0E0E3'}},lineColor: '#707073',minorGridLineColor: '#505053',tickColor: '#707073',title: {style: {color: '#A0A0A3'}}},
+   yAxis: {gridLineColor: '#707073',labels: {style: {color: '#E0E0E3'}},lineColor: '#707073',minorGridLineColor: '#505053',tickColor: '#707073',tickWidth: 1,title: {style: {color: '#A0A0A3'}}},
+   tooltip: {backgroundColor: 'rgba(0, 0, 0, 0.85)',style: {color: '#F0F0F0'}},
+   plotOptions: {series: {dataLabels: {color: '#B0B0B3'},marker: {lineColor: '#333'}},boxplot: {fillColor: '#505053'},candlestick: {lineColor: 'white'},errorbar: {color: 'white'}},
+   legend: {itemStyle: {color: '#E0E0E3'},itemHoverStyle: {color: '#FFF'},itemHiddenStyle: {color: '#606063'}},
+   credits: {style: {color: '#666'}},
+   labels: {style: {color: '#707073'}},
+   drilldown: {activeAxisLabelStyle: {color: '#F0F0F3'},activeDataLabelStyle: {color: '#F0F0F3'}},
+   navigation: {buttonOptions: {symbolStroke: '#DDDDDD',theme: {fill: '#505053'}}},
+   rangeSelector: {
+      buttonTheme: {
+         fill: '#505053',
+         stroke: '#000000',
+         style: {color: '#CCC'},
+         states: {hover: {fill: '#707073',stroke: '#000000',style: {color: 'white'}},select: {fill: '#000003',stroke: '#000000',style: {color: 'white'}}}
+      },
+      inputBoxBorderColor: '#505053',
+      inputStyle: {backgroundColor: '#333',color: 'silver'},
+      labelStyle: {color: 'silver'}
+   },
+   navigator: {handles: {backgroundColor: '#666',borderColor: '#AAA'},outlineColor: '#CCC',maskFill: 'rgba(255,255,255,0.1)',series: {color: '#7798BF',lineColor: '#A6C7ED'},xAxis: {gridLineColor: '#505053'}},
+   scrollbar: {barBackgroundColor: '#808083',barBorderColor: '#808083',buttonArrowColor: '#CCC',buttonBackgroundColor: '#606063',buttonBorderColor: '#606063',rifleColor: '#FFF',trackBackgroundColor: '#404043',trackBorderColor: '#404043'},
+   legendBackgroundColor: 'rgba(0, 0, 0, 0.5)',
+   background2: '#505053',
+   dataLabelsColor: '#B0B0B3',
+   textColor: '#C0C0C0',
+   contrastTextColor: '#F0F0F3',
+   maskColor: 'rgba(255,255,255,0.3)'
+};
+Highcharts.setOptions(Highcharts.theme);
+
+  var bloodworkTitles = String(\""& GraphAnalysis::AnalyteList &"\");
+  bloodworkTitles = bloodworkTitles.split(';').filter(Boolean);
+  var milestonesTitles = [\"Weight (Kg)\", \"BMI\", \"Karnofsky\"];
+  var bloodwork = assignGraphData(bloodworkTitles, String(\""& GraphAnalysis::BWData &"\"));
+
+  var milestones = assignMilestoneData(\""& GraphAnalysis::MData &"\");
+
+  var DS = bloodworkTitles.concat(milestonesTitles);
+
+  var dataTotal = bloodwork.concat(milestones);
+
+  var availgraphs = $(\".dropdown-menu\");
+  $.each(DS, function() {
+      availgraphs.append(\"<li><a class=\" + this + \">\" + this + \"</a></li>\");
+      var id = this.split(' ');
+        $('.' + this.split(' ')[0]).addClass('dropdown-item');
+        $('.'+id[0]).on('click', function() {
+            $('#' + id[0]).toggle('slow');
+        });
+  });
+  $('#showall').on('click', function(){
+    $('div').show('slow'); 
+  });
+
+  $('#autocomplete').autocomplete({
+    source: DS,
+    minLength: 1,
+    close: function() {
+             var val = document.getElementById('autocomplete').value;
+             if(val != ''){
+               $('.chart').hide('fast');
+               $('#'+val.split(' ', 1)).show('slow');
+             };
+           }
+  });
+
+  $('#Go').on('click', function(){
+     var val = document.getElementById('autocomplete').value;
+       if(val != ''){
+         $('.chart').hide('fast');
+         $('#'+val.split(' ', 1)).show('slow');
+     };  
+
+  });
+
+  var tlcategory =[];
+  var timelinedata = createTimelineSeries(tlcategory);
+  Highcharts.chart({
+    chart: {
+      renderTo: 'timeline',
+      type: 'columnrange',
+      inverted: true,
+      zoomType: 'y',
+      marginLeft: 40,spacingTop: 10,spacingBottom: 20,
+    },
+    title: {text: ''},
+    xAxis: {
+      categories: tlcategory,
+      labels: {
+        rotation: -90,
+        }
+    },
+    yAxis: {type: 'datetime',
+      title: {text: 'time'},
+      event: {setExtremes: syncExtremes},
+      startOnTick: false, endOnTick: false, tickPixelInterval: 100,},
+      legend: {enabled: false},
+    tooltip: {
+      formatter: function () {
+        if (this.x == 'Therapy' || this.x == 'Trials'){
+          return '<h3><b>' + this.point.therapytype + '</b></h3><br><b>' + this.point.regimen + '</b><br>Start Date: ' + Highcharts.dateFormat('%m/%d/%y', this.y) + '<br>End Date: ' + Highcharts.dateFormat('%m/%d/%y', this.point.high);
+        } else if (this.x == 'Surgery'){
+          return '<b>' + this.point.surgery + '</b><br>' + Highcharts.dateFormat('%m/%d/%y', this.y) + '<br>' + 'Additional Comments:<br>' + this.point.comments;
+        } else if (this.x == 'LiqBio'){
+          return Highcharts.dateFormat('%m/%d/%y', this.y);
+        };
+      },
+      followPointer: false,
+    },
+    series: [{
+      color: Highcharts.getOptions().colors[9],
+      data: timelinedata,
+    }],
+  });
+
+ var extremes = Highcharts.charts[0].yAxis[0].getExtremes();
+ console.log(extremes.min);
+ console.log(extremes.max);
+
+ for (var i = 0; i < DS.length; i++) {
+    console.log('Loop ' + i);
+    var graphdata = createSeries(dataTotal[i]);
+    console.log(DS[i]);
+    console.log(dataTotal[i]);
+    console.log(graphdata);
+    console.log(graphdata.length);
+    var show = true;
+    if (graphdata.length <= 3){
+      if (graphdata.length < 2) {
+        show = false;
+      };
+      graphdata = addPhantoms(graphdata);
+    };
+
+    $('<div class=\"chart\" id='+DS[i]+'>')
+      .appendTo('#graphs')
+      .highcharts({
+          chart: {marginLeft: 40,spacingTop: 10,spacingBottom: 20, zoomType: 'x', type: 'area', color: Highcharts.getOptions().colors[i], fillOpacity: 0.3, },
+          title: {text: DS[i] ,align: 'left',margin: 0,x: 30},
+          credits: {enabled: false},
+          legend: {enabled: false},
+          xAxis: {
+              crosshair: true,
+              events: {setExtremes: syncExtremes},
+              type: 'datetime',
+              dateTimeLabelFormats: {day: '%Y<br/>%m-%d',week: '%Y<br/>%m-%d',month: '%Y-%m',year: '%Y'},
+              title: {text: 'Date'},
+              min: extremes.min,
+              max: extremes.max,
+              startOnTick: false,
+              endOnTick: false,
+              tickPixelInterval: 75,
+          },
+          yAxis: {title: {text: DS[i]}},
+          tooltip: {
+              positioner: function () {
+                  return {x: this.chart.chartWidth - this.label.width -50,y: -1};
+              },
+              borderWidth: 0,
+              backgroundColor: 'none',
+              pointFormat: '{point.y}',
+              headerFormat: '',
+              shadow: false,
+              style: {fontSize: '18px'},
+              valueDecimals: 1
+          },
+
+          series: [{
+            data: graphdata,
+            color: Highcharts.getOptions().colors[i],
+            connectNulls:true,
+          }],
+      });
+
+      if (show == false){
+        $('#' + DS[i].split(' ')[0]).toggle(false);
+      };
+  };
+    
+});
+
+</script>
+<style type=\"text/css\">
+  .chart {
+    min-width: 320px;
+    max-width: 800px;
+    height: 220px;
+    margin: 0 auto;
+}
+  .timelinechart {
+    min-width: 320px;
+    max-width: 800px;
+    height: 300px;
+    margin: 0 auto;
+}
+</style>
+
+</head>
+<body>
+
+<div class=\"container\">
+  <div class=\"input-group\">
+    <div class=\"input-group-btn\">
+      <button id=\"defaults\" class=\"btn btn-default\" type=\"button\">Defaults</button>
+      <button id=\"showall\" class=\"btn btn-default\" type=\"button\">Show All</button>
+      <button class=\"btn btn-default dropdown-toggle\" type=\"button\" id=\"dropdownMenuButton\" data-toggle=\"dropdown\" aria-expanded=\"false\" aria-haspopup=\"true\">
+        <span class=\"caret\"></span>
+        <span class=\"sr-only\">Toggle Dropdown</span>
+      </button>
+      <ul class=\"dropdown-menu\" aria-labelledby=\"dropdownMenuButton\"></ul>
+    </div>
+    <input id=\"autocomplete\" type=\"text\" class=\"form-control\" aria-label=\"placeholder\" placeholder=\"Look at a specific graph\">
+    <div class=\"input-group-btn\">
+      <button id=\"Go\" class=\"btn btn-default\" type=\"button\">Go</button>
+    </div>
+  </div>
+</div>
+<div id=\"graphs\" class=\"container sortable\"></div>
+<div id=\"timeline\" class=\"container timelinechart\"></div>
+
+</body>
+</html>"
