@@ -17,9 +17,13 @@ def findBarcodes(reads, chopoff=True):
     If chopoff = True, then just grab the first 12.
     """
     if chopoff is True:
-        if 'N' not in reads and len(reads) > 23:
-            barcode = reads[0:13]
-            cutseq = reads[24:len(reads)]
+        if len(reads) > 23:
+            if 'N' not in reads[0:24]:
+                barcode = reads[0:13]
+                cutseq = reads[24:len(reads)]
+            else:
+                barcode = 'N/A'
+                cutseq = ''
         else:
             barcode = 'N/A'
             cutseq = ''
@@ -27,6 +31,9 @@ def findBarcodes(reads, chopoff=True):
     return [barcode, cutseq]
 
 def phredtoAscii(qualityScores):
+    """
+    The phred quality scores are reported in numbers after being read. This creates 
+    """
     asciiScore = ''
     for score in qualityScores:
         asciiScore += str(chr(score+33))
@@ -58,10 +65,6 @@ def annotateSeq(reads, hardCode=True):
         for (R1record, R2record) in zip(SeqIO.parse(handleR1, 'fastq'), SeqIO.parse(handleR2, 'fastq')):
             # creates temp variables to hold the headers and sequences
             # sends to trimAdapters to remove adapters + common sequences
-            # print('records')
-            # print(R1record)
-            # print(R2record)
-            # print('\n')
             tempR1 = R1record.seq
             tempR2 = R2record.seq
             if hardCode==True:
@@ -79,8 +82,8 @@ def annotateSeq(reads, hardCode=True):
                 # print(R2record.description)
 
                 # appends headers
-                R2headers.append(str('@'+R2record.description+':'+tempR2[0]))
-                R1headers.append(str('@'+R1record.description+':'+tempR2[0]))
+                R2headers.append(str('@'+R2record.description.replace(' ', ':')+':'+tempR2[0]))
+                R1headers.append(str('@'+R1record.description.replace(' ', ':')+':'+tempR2[0]))
                 # print(R2record.description + ':' + tempR2[0])
 
                 #appends quality scores
@@ -116,10 +119,16 @@ class ngsReads:
     def __init__(self):
         self.read_dict = {}
     def toCsv(self):
+        """
+        Concats all the reads and creates a csv
+        """
         concat = pd.concat(self.read_dict)
         concat.to_csv('_ngsReads.csv', sep='\t')
         return
     def addLane(self, lane, lane_dict):
+        """
+        Adds lane to read_dict object
+        """
         self.read_dict[lane] = lane_dict
     def toFastq(self, filename1='_tempR1.fastq', filename2='_tempR2.fastq'):
         """
@@ -157,8 +166,11 @@ if __name__ == '__main__':
     starttime = time.time()
 
     parser = argparse.ArgumentParser(description='Processes Illumina NGS sequences into super reads')
-    parser.add_argument('-l', '--lanes', nargs=1, required=True, help='number of lanes', type=int)
+    parser.add_argument('-l', '--lanes', nargs=1, required=False, help='number of lanes', type=int)
+    parser.add_argument('-R', '--R1reads', nargs=1, required=False, help='path to R1 reads (separate different lanes by a comma)', type=str)
+    parser.add_argument('-L', '--R2reads', nargs=1, required=False, help='path to R2 reads (separate different lanes by a comma)', type=str)
     # parser.add_argument('')
+    args = parser.parse_args()
 
     # Generate ngsReads object
     print("Creating ngsReads object")
@@ -166,10 +178,23 @@ if __name__ == '__main__':
 
     # The input files names for easy testing
     print("Setting input files")
-    lanesSeq = [['_Sequences/MSO5_001_L1_R1.fastq', '_Sequences/MSO5_001_L1_R2.fastq'],
-             ['_Sequences/MSO5_001_L2_R1.fastq', '_Sequences/MSO5_001_L2_R2.fastq'],
-             ['_Sequences/MSO5_001_L3_R1.fastq', '_Sequences/MSO5_001_L3_R2.fastq'],
-             ['_Sequences/MSO5_001_L4_R1.fastq', '_Sequences/MSO5_001_L4_R2.fastq']]
+    lanesSeq = []
+    if args.lanes != None:
+        if args.R1reads is None or args.R2reads is None :
+            print('Missing reads')
+        else:
+            R1readstemp = args.R1reads[0].replace(' ', '').split(',')
+            R2readstemp = args.R2reads[0].replace(' ', '').split(',')
+        for x in range(0, args.lanes[0]):
+            lanesSeq.append([R1readstemp[x], R2readstemp[x]])
+    else:
+        print('No inputs, using defaults')
+        lanesSeq = [['_Sequences/MSO5_001_L1_R1.fastq', '_Sequences/MSO5_001_L1_R2.fastq'],
+                ['_Sequences/MSO5_001_L2_R1.fastq', '_Sequences/MSO5_001_L2_R2.fastq'],
+                ['_Sequences/MSO5_001_L3_R1.fastq', '_Sequences/MSO5_001_L3_R2.fastq'],
+                ['_Sequences/MSO5_001_L4_R1.fastq', '_Sequences/MSO5_001_L4_R2.fastq']]
+
+
 
     # import files for each lane and add them to ngsReads object
     for i in range(0, len(lanesSeq)):
