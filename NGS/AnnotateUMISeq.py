@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 import os
 import sys
 import Bio
@@ -46,7 +47,6 @@ def annotateSeq(reads, hardCode=True):
     Find's UMI and adds it to the headers.
 
     """
-    reads = reads
     print('Running annotateSeq on ' + reads[0] + ' and ' + reads[1])
     #to capture reads that do not pass this step and write to a csv
     nobarcodes = []
@@ -130,12 +130,12 @@ class ngsReads:
         Adds lane to read_dict object
         """
         self.read_dict[lane] = lane_dict
-    def toFastq(self, filename1='_tempR1.fastq', filename2='_tempR2.fastq'):
+    def toFastq(self, filename1='_tempR1.fastq', filename2='_tempR2.fastq', path=''):
         """
         Creates a fastq file out of the read dictionary.
         Concatenates the files into a large R1 and R2 files respectively
         """
-        with open(filename1, 'w') as R1handle, open(filename2, 'w') as R2handle:
+        with open(path+filename1, 'w') as R1handle, open(path+filename2, 'w') as R2handle:
             for frame in self.read_dict:
                 for row in self.read_dict[frame].itertuples():
                     # print(row)
@@ -167,8 +167,9 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Processes Illumina NGS sequences into super reads')
     parser.add_argument('-l', '--lanes', nargs=1, required=False, help='number of lanes', type=int)
-    parser.add_argument('-R', '--R1reads', nargs=1, required=False, help='path to R1 reads (separate different lanes by a comma)', type=str)
-    parser.add_argument('-L', '--R2reads', nargs=1, required=False, help='path to R2 reads (separate different lanes by a comma)', type=str)
+    parser.add_argument('-R', '--R1reads', nargs='*', required=False, help='path to R1 reads', type=str)
+    parser.add_argument('-L', '--R2reads', nargs='*', required=False, help='path to R2 reads', type=str)
+    parser.add_argument('-p', '--path', nargs=1, required=False, help='path to save', type=str)
     # parser.add_argument('')
     args = parser.parse_args()
 
@@ -183,8 +184,8 @@ if __name__ == '__main__':
         if args.R1reads is None or args.R2reads is None :
             print('Missing reads')
         else:
-            R1readstemp = args.R1reads[0].replace(' ', '').split(',')
-            R2readstemp = args.R2reads[0].replace(' ', '').split(',')
+            R1readstemp = args.R1reads
+            R2readstemp = args.R2reads
         for x in range(0, args.lanes[0]):
             lanesSeq.append([R1readstemp[x], R2readstemp[x]])
     else:
@@ -195,15 +196,18 @@ if __name__ == '__main__':
                 ['_Sequences/MSO5_001_L4_R1.fastq', '_Sequences/MSO5_001_L4_R2.fastq']]
 
 
-
+    print(lanesSeq)
     # import files for each lane and add them to ngsReads object
-    for i in range(0, len(lanesSeq)):
-        data.addLane(i + 1, annotateSeq([lanesSeq[i][0], lanesSeq[i][1]]))
-
+    try:
+        for i in range(0, len(lanesSeq)):
+            print('adding lane '+str(i))
+            data.addLane(i + 1, annotateSeq([lanesSeq[i][0], lanesSeq[i][1]]))
+    except:
+        print('Problem with inputs')
     print("creating fastq")
-    data.toFastq()
+    data.toFastq(path=args.path[0])
 
-    print("creating sequence csv")
-    data.toCsv()
+    # print("creating sequence csv")
+    # data.toCsv()
 
     print("Total run time: %s" % (time.time() - starttime))
