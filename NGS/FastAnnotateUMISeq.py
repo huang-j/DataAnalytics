@@ -80,6 +80,7 @@ if __name__ == '__main__':
     # parser.add_argument('')
     args = parser.parse_args()
 
+    print("Start time: %s" % starttime)
     # The input files names for easy testing
     print("Setting input files")
     lanesSeq = []
@@ -105,6 +106,7 @@ if __name__ == '__main__':
     for i in range(0, len(lanesSeq)):
         print('processing lane '+str(i))
         annotateSeq([lanesSeq[i][0], lanesSeq[i][1]], i, path=args.path[0])
+        print("lane processing time: %s" % (time.time() - starttime))
     # print("creating sequence csv")
     # data.toCsv()
 
