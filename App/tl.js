@@ -45,18 +45,18 @@ function followUps(bdkeys, blooddraws, thkeys, therapies){
             th = therapies[thkeys[j]];
         // check where bd2 is in regards to current therapy
         // check to see if it's before the end of therapy
-        if(bd.line){
-            if(bd2.drawDate < th.end){
+        if(bd['line']){
+            if(bd2['drawDate'] < th['end']){
                 // check to see if after the start
-                if(bd2.drawDate > th.start && thmoves == 0){
+                if(bd2['drawDate'] > th['start'] && thmoves == 0){
                     bd2['pseudoFollowup'] = true;
                     k++;
                 // if not after start, means this therapy happens after this bd
-                } else if( bd2.drawDate <= th.start && thmoves == 1){
-                    if(therapies[thkeys[j-1]].line != th.line){
+                } else if( bd2['drawDate'] <= th['start'] && thmoves == 1){
+                    if(therapies[thkeys[j-1]][line] != th['line']){
                         bd2['followUp'] = true;
-                        if(!bd2.line){
-                            bd2.line = therapies[thkeys[j-1]].line;
+                        if(!bd2['line']){
+                            bd2['line'] = therapies[thkeys[j-1]]['line'];
                         };
                         i = k;
                         k++;
@@ -68,15 +68,15 @@ function followUps(bdkeys, blooddraws, thkeys, therapies){
                     };
                 };
                 // see if it takes place after end
-            } else if (bd2.drawDate > th.end){
+            } else if (bd2['drawDate'] > th['end']){
                 //
-                if(j + 1 == thkeys.length && thmoves == 0){
+                if(j + 1 == thkeys['length'] && thmoves == 0){
                     bd2['followUp'] = true;
-                    bd2.line = th.line;
+                    bd2['line'] = th['line'];
                     j++;
                 } else {
-                    if(bd2.drawDate < therapies[thkeys[j+1]].start){
-                        bd2.line = th.line;
+                    if(bd2['drawDate'] < therapies[thkeys[j+1]]['start']){
+                        bd2['line'] = th['line'];
                     };
                     if(thmoves == 0) {
                         j++;
@@ -90,16 +90,16 @@ function followUps(bdkeys, blooddraws, thkeys, therapies){
             };
         } else {
             // check if actually has a line
-            if(bd.drawDate > th.start){
-                if(bd.drawDate < th.end){
+            if(bd['drawDate'] > th['start']){
+                if(bd['drawDate'] < th['end']){
                     i++;
                 } else {
                     j++;
                     thmoves++;
                 };
-            } else if (bd.drawDate <= th.start){
+            } else if (bd['drawDate'] <= th['start']){
                     if(thmoves >= 1){
-                        bd.line = therapies[thkeys[j-1]].line;
+                        bd['line'] = therapies[thkeys[j-1]]['line'];
                     } else {
                         i++;
                     };
