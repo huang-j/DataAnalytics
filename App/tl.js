@@ -19,21 +19,35 @@ The initial keys are the same as the start.
 And compare to an array of therapy dates.
 */
 
-blooddraws = {};
+var blooddraws = {
+    1455148800000: {drawDate: 1455148800000, surge: "exoDNA"},
+    1461542400000: {drawDate: 1461542400000},
+    1468195200000: {drawDate: 1468195200000, surge: "exoDNA"},
+    1473638400000: {drawDate: 1473638400000, surge: "cfDNA"},
+    1478476800000: {drawDate: 1478476800000},
+    1490745600000: {drawDate: 1490745600000},
+    1496793600000: {drawDate: 1496793600000},
+};
 // blood draws populated through creation of graph
-therapies = {};
+var therapies = {
+    1456099200000: {start: 1456099200000, end: 1468195200000, line: "First Line"},
+    1468195200000: {start: 1468195200000, end: 1478476800000, line: "First Line"},
+    1478476800000: {start: 1478476800000, end: 1484870400000, line: "First Line"},
+    1485734400000: {start: 1485734400000, end: 1490227200000, line: "Second Line"},
+    1490832000000: {start: 1490832000000, end: 1498594174117, line: "Third Line"},
+};
 // populated before this
 
-// determines line/followup/pseudofollowups
-var bdkeys = blooddraws.keys
-var thkeys = therapies.keys
-
 // while loop that keeps track of both
-function followUps(bdkeys, blooddraws, thkeys, therapies){
+function followUps(blooddraws, therapies){
     var i = 0,
         j = 0,
         k = 1,
         thmoves = 0;
+
+    var bdkeys = Object.keys(blooddraws),
+        thkeys = Object.keys(therapies);
+
     if(blooddraws[bdkeys[0]].drawDate <= therapies[thkeys[0]].start){
         blooddraws[bdkeys[0]].line = 'Baseline';
     };
@@ -43,39 +57,57 @@ function followUps(bdkeys, blooddraws, thkeys, therapies){
         var bd = blooddraws[bdkeys[i]],
             bd2 = blooddraws[bdkeys[k]],
             th = therapies[thkeys[j]];
+        
+      console.log(bd);
+      console.log(bd2);
+      console.log(th);
         // check where bd2 is in regards to current therapy
         // check to see if it's before the end of therapy
         if(bd['line']){
-            if(bd2['drawDate'] < th['end']){
+                console.log('bd has line');
+            if(bd2['drawDate'] <= th['end']){
+                console.log('bd before th end');
                 // check to see if after the start
+                console.log(thmoves);
                 if(bd2['drawDate'] > th['start'] && thmoves == 0){
+                console.log('pseudofollowup');
                     bd2['pseudoFollowup'] = true;
                     k++;
                 // if not after start, means this therapy happens after this bd
                 } else if( bd2['drawDate'] <= th['start'] && thmoves == 1){
+                        console.log('checking if followup');
                     if(therapies[thkeys[j-1]][line] != th['line']){
+                          console.log('followUp');
                         bd2['followUp'] = true;
                         if(!bd2['line']){
+                            console.log('setting line A ' + therapies[thkeys[j-1]]['line']);
                             bd2['line'] = therapies[thkeys[j-1]]['line'];
                         };
                         i = k;
                         k++;
                         thmoves = 0;
-                    } else{
+                    } else {
                         bd2['pseudoFollowup'] = true;
                         k++;
                         thmoves = 0;
                     };
+                } else if ( thmoves > 0 && th['line'] == therapies[thkeys[j-1]]['line']){
+                    console.log('testing');
+                    thmoves = 0;
+                } else {
+                        console.log('should not be here'); 
+                    break;
                 };
                 // see if it takes place after end
             } else if (bd2['drawDate'] > th['end']){
-                //
+                console.log('bd after th end');
                 if(j + 1 == thkeys['length'] && thmoves == 0){
                     bd2['followUp'] = true;
                     bd2['line'] = th['line'];
                     j++;
                 } else {
                     if(bd2['drawDate'] < therapies[thkeys[j+1]]['start']){
+                        console.log('setting line ' + th['line']);
                         bd2['line'] = th['line'];
                     };
                     if(thmoves == 0) {
@@ -99,7 +131,9 @@ function followUps(bdkeys, blooddraws, thkeys, therapies){
                 };
             } else if (bd['drawDate'] <= th['start']){
                     if(thmoves >= 1){
+                        console.log('setting log C');
                         bd['line'] = therapies[thkeys[j-1]]['line'];
+                        thmoves = 0;
                     } else {
                         i++;
                     };
@@ -108,6 +142,8 @@ function followUps(bdkeys, blooddraws, thkeys, therapies){
     };
 
 };
+
+followUp(blooddraws, therapies)
 
 /*
 Lag time is defined as the time between a kras surge and progression.

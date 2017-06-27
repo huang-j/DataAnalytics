@@ -59,7 +59,7 @@ def annotateSeq(reads, lane, filename1='_tempR1_L', filename2='_tempR2_L',path='
                 # writes to respective files
                 R1handle.write(str('@'+R1record[0].replace(' ', ':')+':'+barcode)+'\n'+R1record[1]+'\n+\n'+R1record[2]+'\n')
                 # Write to R2
-                R2handle.write(str('@'+R2record[0].replace(' ', ':')+':'+barcode)+'\n'+R2record[1][24:]+'\n+\n'+R2record[2][24:]+'\n')
+                R2handle.write(str('@'+R1record[0].replace(' ', ':')+':'+barcode)+'\n'+R2record[1][24:]+'\n+\n'+R2record[2][24:]+'\n')
 
 
 
