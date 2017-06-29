@@ -65,7 +65,7 @@ function followUps(blooddraws, therapies){
         // check to see if it's before the end of therapy
         if(bd['line']){
                 console.log('bd has line');
-            if(bd2['drawDate'] <= th['end']){
+            if(bd2['drawDate'] < th['end']){
                 console.log('bd before th end');
                 // check to see if after the start
                 console.log(thmoves);
@@ -76,7 +76,7 @@ function followUps(blooddraws, therapies){
                 // if not after start, means this therapy happens after this bd
                 } else if( bd2['drawDate'] <= th['start'] && thmoves == 1){
                         console.log('checking if followup');
-                    if(therapies[thkeys[j-1]][line] != th['line']){
+                    if(therapies[thkeys[j-1]]['line'] != th['line']){
                           console.log('followUp');
                         bd2['followUp'] = true;
                         if(!bd2['line']){
@@ -99,7 +99,7 @@ function followUps(blooddraws, therapies){
                     break;
                 };
                 // see if it takes place after end
-            } else if (bd2['drawDate'] > th['end']){
+            } else if (bd2['drawDate'] >= th['end']){
                 console.log('bd after th end');
                 if(j + 1 == thkeys['length'] && thmoves == 0){
                     bd2['followUp'] = true;
@@ -116,6 +116,7 @@ function followUps(blooddraws, therapies){
                     } else {
                         i = k;
                         k++;
+                        j++;
                         thmoves = 0;
                     };
                 };
