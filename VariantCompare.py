@@ -1,3 +1,4 @@
+#!/usr/bin/env/python
 import sys
 import pandas as pd
 import numpy as np
@@ -52,7 +53,7 @@ if __name__ = '__main__':
     left = pd.read_csv(args.left[0], sep=',', names=colheaders, low_memory=False)
     right = pd.read_csv(args.right[0], sep='\t', names=colheaders, low_memory=False)
     germline = pd.read_csv('/DataAnalytics/NGS/_Sequences/MS05germline.csv', sep=',')
-    germline.columns = ['Chrom', 'Region']
+    germline.columns = ['Chromosome', 'Region']
     germlinedict = separateByChrom(germline)
 
     leftDict = separateByChrom(left)
