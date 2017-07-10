@@ -16,7 +16,7 @@ def findBarcodes(reads, chopoff=True):
     """
     if chopoff is True:
         if len(reads) > 23:
-            if 'N' not in reads[0:24]:
+            if 'N' not in reads[0:13]:
                 barcode = reads[0:13]
             else:
                 barcode = 'N/A'

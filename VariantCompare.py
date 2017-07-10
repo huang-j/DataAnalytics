@@ -23,10 +23,12 @@ def compareToGermline(dfdict, germline):
 		chrDict.chrom = chrDict.chrom.loc[chrDict.chrom['_merge'] == 'left_only']
 	return chrDict
 
-def concatDFDict(dfdict):
+def compareToReport(dfdict, report):
+	return
 
-	for chrom in dfdict.keys():
-		chrDict.chrom
+def concatDFDict(dfdict):
+	concatDF = pd.concat([dfdict.chrom for chrom in dfdict.keys()])
+	return concatDF
 
 if __name__ = '__main__':
 	parse = argparse.ArgumentParser(description='compares variants between two variant files in CSV format')
@@ -55,9 +57,8 @@ if __name__ = '__main__':
 
     leftDict = separateByChrom(left)
     rightDict = separateByChrom(right)
-
     mergeDict = createInnerJoins(leftDict, rightDict)
-    
     noGLvar = compareToGermline(mergeDict, germlinedict)
-    concatDFDict(noGLvar)
+    noGLvarConcat = concatDFDict(noGLvar)
     
+    noGLvarConcat.to_csv('/DataAnalytics/NGS/_Sequences/noGLvarConcat.csv', sep='\t')
