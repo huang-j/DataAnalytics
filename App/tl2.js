@@ -97,7 +97,7 @@ function createDateRanges(therapies, recist){
             regimen += 1;
         };
         //while the indexes are still under the length.
-        while(bool == false || r < rskeys.length){
+        while(bool == false && r < rskeys.length){
             var rsImage = recist[rskeys[r]];
             //is the image before therapy?
             if(rsImage['imageDate'] < th['start']){
@@ -135,7 +135,7 @@ function createDateRanges(therapies, recist){
                             bool = true;
                         // if none of above, see if it's within 2 weeks of start of therapy and if there was already restaging
                         // don't increase r here, since it will be referenced for this next therapy
-                        } else if(Math.abs(therapies[i+1]['start'] - rsImage['imageDate']) < 604800000 && s == 0){
+                        } else if(Math.abs(therapies[thkeys[i+1]]['start'] - rsImage['imageDate']) < 604800000 && s == 0){
                             s += 1;
                             ranges.push({
                                 R: regimen,
