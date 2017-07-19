@@ -69,15 +69,15 @@ function createDateRanges(therapies, recist){
 };
 
 
-function createDateRanges(){
+function createDateRanges(therapies, recist){
     var thkeys = Object.keys(therapies),
-            rskeys = Object.keys(recist),
-            r = 0,
-            regimen = 0,
-            pline = '',
-            bool = false,
-            firstCT = recist[rskeys[0]],
-            ranges = [];
+        rskeys = Object.keys(recist),
+        r = 0,
+        regimen = 0,
+        pline = '',
+        bool = false,
+        firstCT = recist[rskeys[0]],
+        ranges = [];
     // first take in qualifiers (e.g. only 1 CT)
     if (rskeys.length < 2) {
         console.log('not of CT scans');
@@ -109,7 +109,8 @@ function createDateRanges(){
                     s += 1;
                     r += 1;
                     ranges.push({
-                        code: 'R' + regimen + 'S' + s,
+                        R: regimen,
+                        S: s,
                         start: th['start'],
                         end: rsImage['imageDate']
                     });
@@ -126,7 +127,8 @@ function createDateRanges(){
                             s += 1;
                             r += 1;
                             ranges.push({
-                                code: 'R' + regimen + 'S' + s,
+                                R: regimen,
+                                S: s,
                                 start: th['start'],
                                 end: rsImage['imageDate']
                             });
@@ -136,7 +138,8 @@ function createDateRanges(){
                         } else if(Math.abs(therapies[i+1]['start'] - rsImage['imageDate']) < 604800000 && s == 0){
                             s += 1;
                             ranges.push({
-                                code: 'R' + regimen + 'S' + s,
+                                R: regimen,
+                                S: s,
                                 start: th['start'],
                                 end: rsImage['imageDate']
                             });
@@ -144,7 +147,8 @@ function createDateRanges(){
                         } else { bool = true};
                     } else {
                         ranges.push({
-                            code: 'R' + regimen + 'S' + s,
+                            R: regimen,
+                            S: s
                             start: th['start'],
                             end: rsImage['imageDate']
                         });
@@ -156,4 +160,34 @@ function createDateRanges(){
         bool = false;
     };
     return ranges;
+};
+
+/*
+    After finding the ranges, iterate through blooddraws and label them with the regimen and stagings
+    note to self. can I avoid a n^2 solution?
+*/
+function assignRS(ranges, blooddraws){
+    var ranges = ranges,
+        blooddraws = blooddraws,
+        looper = 0,
+        bdkeys = Object.keys(blooddraws);
+
+    // go through each blooddraw
+    for(var i = 0; i < bdkeys.length; i++){
+        var bddd = blooddraws[bdkeys[i]]['drawDate'];
+        //compare to ranges
+        for(var j = 0; j < ranges.length; j++){
+            var range = ranges[j];
+            if(bddd >= range.start && bddd <= range.end){
+                if(blooddraws[bdkeys[i]]['R']){
+                    bloodraws[bdkeys[i]]['R'].push(range.R);
+                    blooddraw[bdkeys[i]]['S'].push(range.S);
+                } else {
+                    blooddraws[bdkeys[i]]['R'] = [range.R];
+                    blooddraws[bdkeys[i]]['S'] = [range.S];          
+                };
+            }
+        }; 
+    };
+    return blooddraws;
 };
