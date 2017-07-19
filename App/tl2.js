@@ -151,7 +151,7 @@ function createDateRanges(){
                         bool = true;
                     };
                 };
-            x
+            };    
         };
         bool = false;
     };
