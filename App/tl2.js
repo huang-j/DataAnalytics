@@ -79,7 +79,10 @@ function createDateRanges(){
             firstCT = recist[rskeys[0]],
             ranges = [];
     // first take in qualifiers (e.g. only 1 CT)
-    if (rskeys.length < 2) {return 'Not enough CT''s'};
+    if (rskeys.length < 2) {
+        console.log('not of CT scans');
+      return
+    };
     /*
      The start of each RX is the therapy start date, the end date(s) are the CT's
      that show up in within the therapy.
@@ -148,8 +151,9 @@ function createDateRanges(){
                         bool = true;
                     };
                 };
-            };
+            x
         };
         bool = false;
     };
+    return ranges;
 };
