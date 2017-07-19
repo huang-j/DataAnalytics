@@ -146,6 +146,7 @@ function createDateRanges(therapies, recist){
                             bool = true;
                         } else { bool = true};
                     } else {
+                        s += 1;
                         ranges.push({
                             R: regimen,
                             S: s
