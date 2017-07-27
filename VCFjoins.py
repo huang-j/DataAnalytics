@@ -54,6 +54,12 @@ def setColumns(dfdict, merge=False, limit=True, cosmic=False, addValues=[]):
 		elif addValues != []:
 			chrDict[chrom] = chrDict[chrom][['CHROM', 'POS', 'ID', 'REF', 'ALT'] + addValues]
 	return chrDict
+
+def writeTo(dfdict, location, name):
+	for chrom in dfdict.keys():
+		if dfdict[chrom].empty == False:
+			dfdict[chrom].to_csv("VariantAnalysis/"+location+name+chrom+".csv", sep='\t')
+
 starttime = time.time()
 print('Starting')
 
@@ -103,10 +109,11 @@ ms053fdict = separateByChrom(MS053filtered)
 print("--- %s seconds ---" % (time.time() - starttime))
 print('Finding variants in Dash3 only')
 ## dash3 only
-dash3only = leftJoinsOnly(h2b2dict, ms053dict)
+dash3only = leftJoinsOnly(ms053dict, h2b2dict)
 # dash3only = matchRefAlt(dash3only)
 dash3only = setColumns(dash3only, merge=True, limit=True)
-fdash3only = leftJoinsOnly(h2b2dict, ms053fdict)
+fdash3only = leftJoinsOnly(ms053fdict, h2b2dict)
+
 # fdash3only = matchRefAlt(fdash3only)
 fdash3only = setColumns(fdash3only, merge=True, limit=True)
 ## remove germline
@@ -128,11 +135,12 @@ concatDFDict(fcosmicdash3).to_csv("VariantAnalysis/Dash3/fcosmicd3.csv", sep='\t
 
 print("--- %s seconds ---" % (time.time() - starttime))
 print('Finding variants in Dash2 only')
+
 ## dash2 only
-dash2only = leftJoinsOnly(ms053dict, h2b2dict)
+dash2only = leftJoinsOnly(h2b2dict, ms053dict)
 # dash2only = matchRefAlt(dash2only)
 dash2only = setColumns(dash2only, merge=True, limit=True)
-fdash2only = leftJoinsOnly(ms053fdict, h2b2dict)
+fdash2only = leftJoinsOnly(h2b2dict, ms053fdict)
 # fdash2only = matchRefAlt(dash2only)
 fdash2only = setColumns(fdash2only, merge=True, limit=True)
 ## remove germline
@@ -183,42 +191,42 @@ print('Comparing to tissue')
 # Tissue:
 # D3 only
 tissueD3 = createInnerJoins(cosmicdash3, tissuedict)
-# concatDFDict(tissueD3).to_csv("VariantAnalysis/Dash3/TissueD3.csv", sep='\t')
 ftissueD3 = createInnerJoins(fcosmicdash3, tissuedict)
-# concatDFDict(ftissueD3).to_csv("VariantAnalysis/Dash3/fTissueD3.csv", sep='\t')
+writeTo(tissueD3, "Dash3/Tissue/Unfiltered/", "tissue")
+writeTo(ftissueD3, "Dash3/Tissue/Filtered/", "ftissue")
 
 # D2 only
 tissueD2 = createInnerJoins(cosmicdash2, tissuedict)
-# concatDFDict(tissueD2).to_csv("VariantAnalysis/Dash2/TissueD2.csv", sep='\t')
 ftissueD2 = createInnerJoins(fcosmicdash2, tissuedict)
-# concatDFDict(ftissueD2).to_csv("VariantAnalysis/Dash2/fTissueD2.csv", sep='\t')
+writeTo(tissueD2, "Dash2/Tissue/Unfiltered/", "tissue")
+writeTo(ftissueD2, "Dash2/Tissue/Filtered/", "ftissue")
 
 # Both
 tissueboth = createInnerJoins(bothcosmic, tissuedict)
-# concatDFDict(tissueboth).to_csv("VariantAnalysis/Both/TissueBoth.csv", sep='\t')
 ftissueboth = createInnerJoins(fbothcosmic, tissuedict)
-# concatDFDict(ftissueboth).to_csv("VariantAnalysis/Both/fTissueBoth.csv", sep='\t')
+writeTo(tissueboth, "Both/Tissue/Unfiltered/", "tissue")
+writeTo(ftissueboth, "Both/Tissue/Filtered/", "ftissue")
 
 print("--- %s seconds ---" % (time.time() - starttime))
 print('Comparing to organoids')
 # Organoids
 # D3 only
 organoidD3 = createInnerJoins(cosmicdash3, organoiddict)
-# concatDFDict(organoidD3).to_csv("VariantAnalysis/Dash3/OrganoidD3.csv", sep='\t')
 forganoidD3 = createInnerJoins(fcosmicdash3, organoiddict)
-# concatDFDict(forganoidD3).to_csv("VariantAnalysis/Dash3/fOrganoidD3.csv", sep='\t')
+writeTo(organoidD3, "Dash3/Organoid/Unfiltered/", "organoid")
+writeTo(forganoidD3, "Dash3/Organoid/Filtered/", "organoid")
 
 # D2 only
 organoidD2 = createInnerJoins(cosmicdash2, organoiddict)
-# concatDFDict(organoidD2).to_csv("VariantAnalysis/Dash2/OrganoidD2.csv", sep='\t')
 forganoidD2 = createInnerJoins(fcosmicdash2, organoiddict)
-# concatDFDict(organoidD2).to_csv("VariantAnalysis/Dash2/fOrganoidD2.csv", sep='\t')
+writeTo(organoidD2, "Dash2/Organoid/Unfiltered/", "organoid")
+writeTo(forganoidD2, "Dash2/Organoid/Filtered/", "organoid")
 
 # Both
 organoidboth = createInnerJoins(bothcosmic, organoiddict)
-# concatDFDict(organoidboth).to_csv("VariantAnalysis/Both/OrganoidBoth.csv", sep='\t')
 forganoidboth = createInnerJoins(fbothcosmic, organoiddict)
-# concatDFDict(forganoidboth).to_csv("VariantAnalysis/Both/fOrganoidBoth.csv", sep='\t')
+writeTo(organoidboth, "Both/Organoid/Unfiltered/", "organoid")
+writeTo(forganoidboth, "Both/Organoid/Filtered/", "organoid")
 
 print('Total runtime')
 print("--- %s seconds ---" % (time.time() - starttime))
