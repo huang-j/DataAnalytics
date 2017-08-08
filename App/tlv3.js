@@ -3,7 +3,7 @@ $(function() {
       therapies = [],
       progression = [],
       recist = [];
-function add(a. b){
+function add(a, b){
   return a + b;
 };
 function parseDate(date, mdy) {
