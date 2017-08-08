@@ -2,7 +2,8 @@ $(function() {
   var blooddraws = [],
       therapies = [],
       progression = [],
-      recist = [];
+      recist = []
+      recistG = [];
 function add(a, b){
   return a + b;
 };
@@ -51,14 +52,14 @@ console.log(tempdate);
             } else if(blooddraws[bd]['drawDate'] <= recist[rsindex]['imageDate'] - weeks || blooddraws[bd]['drawDate'] < therapies[tindex].start){
               bdindex += 1;
             } else {
-              if(recist[rsindex]['event'] = 'PD'){
-                if(blooddraws[bd]['pos'] = 'both'){
+              if(recist[rsindex]['event'] == 'PD'){
+                if(blooddraws[bd]['pos'] == 'both'){
                   exopredict.push(1);
                   cfpredict.push(1);
-                } else if(blooddraws[bd]['pos'] = 'exoDNA'){
+                } else if(blooddraws[bd]['pos'] == 'exoDNA'){
                   exopredict.push(1);
                   cfpredict.push(0);
-                } else if(blooddraws[bd]['pos'] = 'cfDNA'){
+                } else if(blooddraws[bd]['pos'] =='cfDNA'){
                   exopredict.push(0);
                   cfpredict.push(1);
                 } else {
@@ -66,13 +67,13 @@ console.log(tempdate);
                   cfpredict.push(0);
                 };
               } else {
-                if(blooddraws[bd]['pos'] = 'both'){
+                if(blooddraws[bd]['pos'] == 'both'){
                   exopredict.push(0);
                   cfpredict.push(0);
-                } else if(blooddraws[bd]['pos'] = 'exoDNA'){
+                } else if(blooddraws[bd]['pos'] == 'exoDNA'){
                   exopredict.push(0);
                   cfpredict.push(1);
-                } else if(blooddraws[bd]['pos'] = 'cfDNA'){
+                } else if(blooddraws[bd]['pos'] =='cfDNA'){
                   exopredict.push(1);
                   cfpredict.push(0);
                 } else {
@@ -206,7 +207,7 @@ console.log(recist);
        y: image['imageDate'],
        event: image['event'],
     };
-    if(point.event = 'PD'){
+    if(point.event == 'PD'){
       point.color = 'Red';
     };
     recistG.push(point);
@@ -295,4 +296,4 @@ console.log(therapies);
 //    theURL = \"fmp://$/" & Get ( FileName ) & "\?script=WVSetFollowUps&param=\" + fulist;
 //    window.location = theURL ;
 
-// });
+});
