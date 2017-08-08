@@ -36,7 +36,7 @@ console.log(tempdate);
         weeks = weeks * 604800000,
         ep = [],
         cp = [];
-    while(rsindex < recist.length()){
+    while(rsindex < recist.length){
       if(recist[rsindex]['imageDate'] < therapies[tindex].start){
         rsindex += 1;
       } else if(therapies[tindex + 1]) {
@@ -46,51 +46,55 @@ console.log(tempdate);
       } else {
           var exopredict = [],
               cfpredict = [];
-          for(var bd = bdindex; bd < blooddraws.length(); bd++){
+          for(var bd = bdindex; bd < blooddraws.length; bd++){
             if(blooddraws[bd]['drawDate'] >= recist[rsindex]['imageDate']){
               break
             } else if(blooddraws[bd]['drawDate'] <= recist[rsindex]['imageDate'] - weeks || blooddraws[bd]['drawDate'] < therapies[tindex].start){
               bdindex += 1;
             } else {
               if(recist[rsindex]['event'] == 'PD'){
-                if(blooddraws[bd]['pos'] == 'both'){
-                  exopredict.push(1);
-                  cfpredict.push(1);
-                } else if(blooddraws[bd]['pos'] == 'exoDNA'){
-                  exopredict.push(1);
-                  cfpredict.push(0);
-                } else if(blooddraws[bd]['pos'] =='cfDNA'){
-                  exopredict.push(0);
-                  cfpredict.push(1);
+                if(blooddraws[bd]['pos']){
+                  if(blooddraws[bd]['pos'] == 'both'){
+                    exopredict.push(1);
+                    cfpredict.push(1);
+                  } else if(blooddraws[bd]['pos'] == 'exoDNA'){
+                    exopredict.push(1);
+                    cfpredict.push(0);
+                  } else if(blooddraws[bd]['pos'] =='cfDNA'){
+                    exopredict.push(0);
+                    cfpredict.push(1);
+                  };
                 } else {
                   exopredict.push(0);
                   cfpredict.push(0);
                 };
               } else {
-                if(blooddraws[bd]['pos'] == 'both'){
-                  exopredict.push(0);
-                  cfpredict.push(0);
-                } else if(blooddraws[bd]['pos'] == 'exoDNA'){
-                  exopredict.push(0);
-                  cfpredict.push(1);
-                } else if(blooddraws[bd]['pos'] =='cfDNA'){
-                  exopredict.push(1);
-                  cfpredict.push(0);
+                if(blooddraws[bd]['pos']){
+                  if(blooddraws[bd]['pos'] == 'both'){
+                    exopredict.push(0);
+                    cfpredict.push(0);
+                  } else if(blooddraws[bd]['pos'] == 'exoDNA'){
+                    exopredict.push(0);
+                    cfpredict.push(1);
+                  } else if(blooddraws[bd]['pos'] =='cfDNA'){
+                    exopredict.push(1);
+                    cfpredict.push(0);
+                  };
                 } else {
                   exopredict.push(1);
                   cfpredict.push(1);
-                };;
+                };
               };
             };
           };
           if(exopredict != []){
-            var exofract = exopredict.reduce(add, 0)/exopredict.length();
+            var exofract = exopredict.reduce(add, 0)/exopredict.length;
           } else {
             console.log('no blooddraws before restaging');
             var exofract = 'N/A'
           };
           if(exopredict != []){
-            var cffract = cfpredict.reduce(add, 0)/cfpredict.length();
+            var cffract = cfpredict.reduce(add, 0)/cfpredict.length;
           } else {
             console.log('no blooddraws before restaging');
             var cffract = 'N/A'
