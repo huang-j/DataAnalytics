@@ -107,14 +107,6 @@ $(function() {
                   cfpredict.push(1);
                 };
               };
-              lines.push(blooddraws[bd]['line']);
-              if(blooddraws[bd]['regimen'].indexOf('Fol') != 0){
-                regimens.push('5-FU');
-              } else if(blooddraws[bd]['regimen'].indexOf('Gem') != 0){
-                regimens.push('GEM');
-              } else {
-                regimens.push(blooddraws[bd]['regimen'])
-              };
             };
           };
           if(exopredict != []){
@@ -133,6 +125,14 @@ $(function() {
           ep.push(exofract);
           recist[rsindex]['cfPrediction'] = cffract;
           cp.push(cffract);
+          lines.push(therapies[tindex]['line']);
+          if(therapies[tindex]['regimen'].indexOf('Fol') != -1){
+            regimens.push('5-FU');
+          } else if(therapies[tindex]['regimen'].indexOf('Gem') != -1){
+            regimens.push('GEM');
+          } else {
+            regimens.push(therapies[tindex]['regimen'])
+          };
           rsindex += 1;
       };
     };
