@@ -329,5 +329,26 @@ console.log(therapies);
 //    var fulist = fus[0] + '-' + fus[1];
 //    theURL = \"fmp://$/" & Get ( FileName ) & "\?script=WVSetFollowUps&param=\" + fulist;
 //    window.location = theURL ;
+var fURLs = [
+//  \"fmp://$/" & Get ( FileName ) & "\?script=AssignBloodDrawLine&param=\"
+];
+
+var data = [
+
+];
+
+function talkToFMP(data, URL){
+  var str = '';
+  for(var i = 0; i < data.length; i++){
+    str = str + data[i] + '-';
+  };
+  theURL = URL + str;
+};
+
+$('#assign').click(function(){
+  for(var i = 0; i < fURLs.length; i++){
+    talkToFMP(data[i], fURLS[i]);
+  };
+});
 
 });
