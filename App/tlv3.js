@@ -4,30 +4,48 @@ $(function() {
       progression = [],
       recist = []
       recistG = [];
-function add(a, b){
-  return a + b;
-};
-function parseDate(date, mdy) {
-    var tempdate = date;
-console.log(tempdate);
-    if( tempdate == '' ){
-      console.log('empty date');
-      console.log(date);
-      return 0;
-    };
-    if (tempdate != '') {
-      tempdate = tempdate.split(' ');
-      tempdate = tempdate[0].split('-');
-    };
-    if (tempdate[0].indexOf('/') != -1) {
-      tempdate = tempdate[0].split('/');
-    };
-    if(mdy == true){var newDate = (Date.UTC(tempdate[2], tempdate[0] - 1, tempdate[1])); } else {
-      var newDate = (Date.UTC(tempdate[0], tempdate[1] - 1, tempdate[2]));
-    };
-    return newDate;
+  function add(a, b){
+    return a + b;
+  };
+  function parseDate(date, mdy) {
+      var tempdate = date;
+      if( tempdate == '' ){
+        console.log('empty date');
+        console.log(date);
+        return 0;
+      };
+      if (tempdate != '') {
+        tempdate = tempdate.split(' ');
+        tempdate = tempdate[0].split('-');
+      };
+      if (tempdate[0].indexOf('/') != -1) {
+        tempdate = tempdate[0].split('/');
+      };
+      if(mdy == true){var newDate = (Date.UTC(tempdate[2], tempdate[0] - 1, tempdate[1])); } else {
+        var newDate = (Date.UTC(tempdate[0], tempdate[1] - 1, tempdate[2]));
+      };
+      return newDate;
   };
 
+  function combineLines(therapies){
+    var temptherapies = [],
+        index = 0,
+        i2 = 1;
+    temptherapies.push(therapies[index]);
+    while(index < therapies.length){
+      var line = temptherapies[index]['line'];
+      while(i2 < therapies.length){
+        if(therapies[i2]['line'] == line){
+          temptherapies[index]['end'] = therapies[i2]['end'];
+        } else {
+          break
+        };
+        i2 += 1;
+      };
+      index += 1;
+    };
+    return temptherapies;
+  };
 
   function recistPredict(recist, therapies, blooddraws, weeks){
     var tindex = 0,
@@ -37,12 +55,13 @@ console.log(tempdate);
         ep = [],
         cp = [];
     while(rsindex < recist.length){
+      if(therapies[tindex + 1]) {
+        if(recist[rsindex]['imageDate'] >= therapies[tindex + 1].start){
+          tindex += 1;
+        };
+      };
       if(recist[rsindex]['imageDate'] < therapies[tindex].start){
         rsindex += 1;
-      } else if(therapies[tindex + 1]) {
-          if(recist[rsindex]['imageDate'] >= therapies[tindex + 1].start){
-            tindex += 1;
-          };
       } else {
           var exopredict = [],
               cfpredict = [];
