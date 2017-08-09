@@ -32,7 +32,7 @@ $(function() {
         index = 0,
         i2 = 1;
     temptherapies.push(therapies[index]);
-    while(index < therapies.length){
+    while(i2 < therapies.length){
       var line = temptherapies[index]['line'];
       while(i2 < therapies.length){
         if(therapies[i2]['line'] == line){
@@ -53,6 +53,8 @@ $(function() {
         bdindex = 0,
         rsindex = 0,
         weeks = weeks * 604800000,
+        lines = [],
+        regimens = [],
         ep = [],
         cp = [];
     while(rsindex < recist.length){
@@ -105,6 +107,14 @@ $(function() {
                   cfpredict.push(1);
                 };
               };
+              lines.push(blooddraws[bd]['line']);
+              if(blooddraws[bd]['regimen'].indexOf('Fol') != 0){
+                regimens.push('5-FU');
+              } else if(blooddraws[bd]['regimen'].indexOf('Gem') != 0){
+                regimens.push('GEM');
+              } else {
+                regimens.push(blooddraws[bd]['regimen'])
+              };
             };
           };
           if(exopredict != []){
@@ -126,7 +136,7 @@ $(function() {
           rsindex += 1;
       };
     };
-    return [ep, cp];
+    return [ep, cp, lines, regimens];
   };
 
   var therapylist = String("& GraphAnalysis::TherapyList &").split(';');
