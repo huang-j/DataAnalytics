@@ -38,6 +38,7 @@ $(function() {
         if(therapies[i2]['line'] == line){
           temptherapies[index]['end'] = therapies[i2]['end'];
         } else {
+          temptherapies.push(therapies[i2]);
           break
         };
         i2 += 1;
