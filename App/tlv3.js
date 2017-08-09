@@ -64,6 +64,12 @@ $(function() {
         };
       };
       if(recist[rsindex]['imageDate'] < therapies[tindex].start){
+        if(tindex == 0){
+          lines.push('N/A');
+          regimens.push('N/A');
+          ep.push('N/A');
+          cp.push('N/A');
+        };
         rsindex += 1;
       } else {
           var exopredict = [],
