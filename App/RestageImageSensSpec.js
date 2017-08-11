@@ -39,14 +39,7 @@ function filterData(data, source, Line, Regimen, Threshold){
 		trueNegatives = 0,
 		falsePositives = 0,
 		falseNegatives = 0;
-	if(prog == '+'  || prog.indexOf('pos') != -1 || prog == true){
-		var progression = true;
-	} else if(prog == '-' || prog.indexOf('neg') != -1 || prog == false){
-		var progression = false;
-	} else {
-		console.log('Defaulting to Progression (+)');
-		var head = 'Progression';
-	};
+
 	if(Line){
 		var Line = Line;
 	} else {
