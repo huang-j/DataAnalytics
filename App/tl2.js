@@ -181,8 +181,8 @@ function assignRS(ranges, blooddraws){
             var range = ranges[j];
             if(bddd >= range.start && bddd <= range.end){
                 if(blooddraws[bdkeys[i]]['R']){
-                    bloodraws[bdkeys[i]]['R'].push(range.R);
-                    blooddraw[bdkeys[i]]['S'].push(range.S);
+                    blooddraws[bdkeys[i]]['R'].push(range.R);
+                    blooddraws[bdkeys[i]]['S'].push(range.S);
                 } else {
                     blooddraws[bdkeys[i]]['R'] = [range.R];
                     blooddraws[bdkeys[i]]['S'] = [range.S];          
