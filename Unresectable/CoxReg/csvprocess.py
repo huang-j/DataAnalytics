@@ -26,7 +26,7 @@ df['ecog'] = df['Karnofsky'].apply(lambda x: 0 if x == 100 else
 											(1 if x == 90 or x == 80 else 
 											(2 if x == 70 or x == 60 else 
 											(3 if x == 50 or x == 40 else 
-											(4 if x == 30 or x == 20 or x == 10 else 5)))))
+											(4 if x == 30 or x == 20 or x == 10 else '')))))
 df['exo5'] = df['exoDNA'].apply(lambda x: 1 if (x >= 5) & (x != '') else 0)
 df['exo1'] = df['exoDNA'].apply(lambda x: 1 if (x >= 1) & (x != '') else 0)
 df['exo'] = df['exoDNA'].apply(lambda x: 1 if (x>0) & (x != '')  else 0)
@@ -37,7 +37,6 @@ df['exoorcf'] = np.where( (df['exoDNA'] > 5) | (df['cfDNA'] > 0), 1, 0);
 df['exoandcf'] = np.where( (df['exoDNA'] > 5) & (df['cfDNA'] > 0), 1, 0);
 df['CA19-9'] = pd.to_numeric(df['CA19-9'], errors='coerce')
 df['CA19.300'] = df['CA19-9'].apply(lambda x: 1 if (x >= 300)  & (x != '') else 0) 
-df['tumorhead'] = df['tumor location'].apply(lambda x: 1 if 'Head' in x else 0)
 df.to_csv('genericfilename.csv', sep=',')
 met = df.loc[df['clinical stage'] == 'Stage IV']
 met.to_csv('genericfilename1.csv', sep=',')
