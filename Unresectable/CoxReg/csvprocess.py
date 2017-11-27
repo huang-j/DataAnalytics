@@ -22,6 +22,11 @@ df['metLivervAll'] = df['Metastasis'].apply(lambda x: 1 if 'Liver' in x else (''
 df['metLivervLung'] = df['Metastasis'].apply(lambda x: 1 if 'Liver' in x else (0 if 'Lung' in x else ''))
 df['metLivervPeri'] = df['Metastasis'].apply(lambda x: 1 if 'Liver' in x else (0 if 'Peritoneal' in x else ''))
 df['factorMet'] = df['Metastasis'].apply(lambda x: 3 if 'Peritoneal' in x else (4 if 'Lymph' in x else (2 if 'Lung' in x else (1 if 'Liver' in x else (3 if 'Ovarian' in x else 5)))))
+df['ecog'] = df['Karnofsky'].apply(lambda x: 0 if x == 100 else
+											(1 if x == 90 or x == 80 else 
+											(2 if x == 70 or x == 60 else 
+											(3 if x == 50 or x == 40 else 
+											(4 if x == 30 or x == 20 or x == 10 else 5)))))
 df['exo5'] = df['exoDNA'].apply(lambda x: 1 if (x >= 5) & (x != '') else 0)
 df['exo1'] = df['exoDNA'].apply(lambda x: 1 if (x >= 1) & (x != '') else 0)
 df['exo'] = df['exoDNA'].apply(lambda x: 1 if (x>0) & (x != '')  else 0)
