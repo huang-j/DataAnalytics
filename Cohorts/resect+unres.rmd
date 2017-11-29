@@ -1,0 +1,741 @@
+---
+title: "Unresectable Cox Reg Data"
+author: "Jonathan"
+date: "November 28, 2017"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+  tex_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(survival)
+library(survminer)
+library(ggplot2)
+library(ggpubr)
+library(stargazer)
+df = read.csv('Unresectable/CoxReg/genericfilename.csv', sep=',', na.strings = c('',' '))
+met = read.csv('Unresectable/CoxReg/genericfilename1.csv', sep=',', na.strings = c('',' '))
+la = read.csv('Unresectable/CoxReg/genericfilename2.csv', sep=',', na.strings = c('',' '))
+resect = read.csv('Resectable/Data/genericfilename.csv', sep=',', na.strings = c('',' '))
+## Added log scales to some fields
+## CA19
+df$logCA19 <- log2(df$CA19.9)
+## exoDNA
+##   Base 2
+df$log2exo <- log2(df$exoDNA + 1)
+df$log2exong <- log2(df$exoDNA.mut.ng.ml+1)
+df$log2exotot <- log2(df$total.DNA.yield.exo+1)
+df$log2exogen <- log2(df$genomic.equivalents.exo+1)
+### Base 10
+df$log10exo <- log10(df$exoDNA + 1)
+df$log10exong <- log10(df$exoDNA.mut.ng.ml+1)
+df$log10exotot <- log10(df$total.DNA.yield.exo+1)
+df$log10exogen <- log10(df$genomic.equivalents.exo+1)
+## cfDNA
+##   Base 2
+df$log2cf <- log2(df$cfDNA + 1)
+df$log2cfng <- log2(df$cfDNA.mut.ng.ml+1)
+df$log2cftot <- log2(df$total.DNA.yield.cf+1)
+df$log2cfgen <- log2(df$genomic.equivalents.cf+1)
+##   Base 10
+df$log10cf <- log10(df$cfDNA + 1)
+df$log10cfng <- log10(df$cfDNA.mut.ng.ml+1)
+df$log10cftot <- log10(df$total.DNA.yield.cf+1)
+df$log10cfgen <- log10(df$genomic.equivalents.cf+1)
+
+## for just met
+met$logCA19 <- log2(met$CA19.9)
+met$CA19p1 <- met$CA19.9+1
+## exoDNA
+## + 1
+met$exop1 <- met$exoDNA + 1
+##   Base 2
+met$log2exo <- log2(met$exoDNA + 1)
+met$log2exong <- log2(met$exoDNA.mut.ng.ml+1)
+met$log2exotot <- log2(met$total.DNA.yield.exo+1)
+met$log2exogen <- log2(met$genomic.equivalents.exo+1)
+
+## base 10
+met$log10exo <- log10(met$exoDNA + 1)
+
+## cfDNA
+## + 1
+met$cfp1 <- met$cfDNA + 1
+##   Base 2
+met$log2cf <- log2(met$cfDNA + 1)
+met$log2cfng <- log2(met$cfDNA.mut.ng.ml+1)
+met$log2cftot <- log2(met$total.DNA.yield.cf+1)
+met$log2cfgen <- log2(met$genomic.equivalents.cf+1)
+
+## base 10
+met$log10cf <- log10(met$cfDNA + 1)
+
+
+## la
+la$logCA19 <- log2(la$CA19.9)
+la$log2exo <- log2(la$exoDNA + 1)
+la$log2exong <- log2(la$exoDNA.mut.ng.ml+1)
+la$log2exotot <- log2(la$total.DNA.yield.exo+1)
+la$log2exogen <- log2(la$genomic.equivalents.exo+1)
+
+la$log2cf <- log2(la$cfDNA + 1)
+la$log2cfng <- log2(la$cfDNA.mut.ng.ml+1)
+la$log2cftot <- log2(la$total.DNA.yield.cf+1)
+la$log2cfgen <- log2(la$genomic.equivalents.cf+1)
+
+## resectables
+resect$exop1 <- resect$exoDNA + 1
+resect$cfp1 <- resect$cfDNA + 1
+resect$CA19p1 <- resect$cfDNA + 1
+```
+
+# Univariate
+
+Univariate cox regressions for most variables found in our demographics tables
+
+## Both
+
+### PFS
+
+```{r univariatePFS, echo=FALSE}
+vars <- c('exoDNA', 'exo5', 'exo1', 'exo', 'log2exo','total.DNA.yield.exo', 'exoDNA.mut.ng.ml', 'genomic.equivalents.exo', 'log2cf', 'cfDNA', 'cf1', 'cf', 'total.DNA.yield.cf', 'cfDNA.mut.ng.ml', 'genomic.equivalents.cf', 'exoorcf', 'exoandcf', 'Age', 'gender', 'logCA19', 'ecog', 'Regimen', 'SLD', 'metLivervAll', 'CA19.300', 'Num.Met')
+univ_formulas <- sapply(vars, function(x) as.formula(paste('Surv(PFS, Progression)~', x)))
+univ_models <- lapply( univ_formulas, function(x){coxph(x, data = df)})
+univ_results <- lapply(univ_models,
+                       function(x){ 
+                          x <- summary(x)
+                          p.value<-signif(x$wald["pvalue"], digits=3)
+                          wald.test<-signif(x$wald["test"], digits=3)
+                          beta<-signif(x$coef[1], digits=2);#coeficient beta
+                          HR <-signif(x$coef[2], digits=2);#exp(beta)
+                          HR.confint.lower <- signif(x$conf.int[,"lower .95"], 3)
+                          HR.confint.upper <- signif(x$conf.int[,"upper .95"],3)
+                          HR <- paste0(HR, " (", 
+                                       HR.confint.lower, "-", HR.confint.upper, ")")
+                          res<-c(beta, HR, wald.test, p.value)
+                          names(res)<-c("beta", "HR (95% CI for HR)", "wald.test", 
+                                        "p.value")
+                          return(res)
+                          #return(exp(cbind(coef(x),confint(x))))
+                         })
+res <- t(as.data.frame(univ_results, check.names = TRUE))
+## as.data.frame(res)
+stargazer(res, type = 'text', title='Univariate Cox Regression (PFS)')
+summary(coxph(Surv(PFS, Progression)~factor(factorMet), data = df))
+summary(coxph(Surv(PFS, Progression)~factor(ecog), data = df))
+```
+
+### OS
+
+```{r univariateOS, echo=FALSE}
+univ_formulas <- sapply(vars, function(x) as.formula(paste('Surv(OS, vital.status)~', x)))
+univ_models <- lapply( univ_formulas, function(x){coxph(x, data = df)})
+univ_results <- lapply(univ_models,
+                       function(x){ 
+                          x <- summary(x)
+                          p.value<-signif(x$wald["pvalue"], digits=2)
+                          wald.test<-signif(x$wald["test"], digits=2)
+                          beta<-signif(x$coef[1], digits=2);#coeficient beta
+                          HR <-signif(x$coef[2], digits=2);#exp(beta)
+                          HR.confint.lower <- signif(x$conf.int[,"lower .95"], 2)
+                          HR.confint.upper <- signif(x$conf.int[,"upper .95"],2)
+                          HR <- paste0(HR, " (", 
+                                       HR.confint.lower, "-", HR.confint.upper, ")")
+                          res<-c(beta, HR, wald.test, p.value)
+                          names(res)<-c("beta", "HR (95% CI for HR)", "wald.test", 
+                                        "p.value")
+                          return(res)
+                          #return(exp(cbind(coef(x),confint(x))))
+                         })
+res <- t(as.data.frame(univ_results, check.names = TRUE))
+## as.data.frame(res)
+stargazer(res, type = 'text', title='Univariate Cox Regression (OS)')
+summary(coxph(Surv(OS, vital.status)~factor(factorMet), data = df))
+summary(coxph(Surv(OS, vital.status)~factor(ecog), data = df))
+```
+
+## Met Cohort Only
+
+Stage IV only as LA has some confounding problems.
+
+### PFS
+
+```{r metcohortuniPFS, echo=FALSE}
+univ_formulas <- sapply(vars, function(x) as.formula(paste('Surv(PFS, Progression)~', x)))
+univ_models <- lapply( univ_formulas, function(x){coxph(x, data = met)})
+univ_results <- lapply(univ_models,
+                       function(x){ 
+                          x <- summary(x)
+                          p.value<-signif(x$wald["pvalue"], digits=2)
+                          wald.test<-signif(x$wald["test"], digits=2)
+                          beta<-signif(x$coef[1], digits=2);#coeficient beta
+                          HR <-signif(x$coef[2], digits=2);#exp(beta)
+                          HR.confint.lower <- signif(x$conf.int[,"lower .95"], 2)
+                          HR.confint.upper <- signif(x$conf.int[,"upper .95"],2)
+                          HR <- paste0(HR, " (", 
+                                       HR.confint.lower, "-", HR.confint.upper, ")")
+                          res<-c(beta, HR, wald.test, p.value)
+                          names(res)<-c("beta", "HR (95% CI for HR)", "wald.test", 
+                                        "p.value")
+                          return(res)
+                          #return(exp(cbind(coef(x),confint(x))))
+                         })
+res <- t(as.data.frame(univ_results, check.names = TRUE))
+## as.data.frame(res)
+stargazer(res, type = 'text', title='Univariate Cox Regression (PFS)')
+summary(coxph(Surv(PFS, Progression)~factor(factorMet), data = met))
+summary(coxph(Surv(PFS, Progression)~factor(ecog), data = met))
+```
+
+### OS
+
+```{r metcohortuniOS, echo=FALSE}
+univ_formulas <- sapply(vars, function(x) as.formula(paste('Surv(OS, vital.status)~', x)))
+univ_models <- lapply( univ_formulas, function(x){coxph(x, data = met)})
+univ_results <- lapply(univ_models,
+                       function(x){ 
+                          x <- summary(x)
+                          p.value<-signif(x$wald["pvalue"], digits=2)
+                          wald.test<-signif(x$wald["test"], digits=2)
+                          beta<-signif(x$coef[1], digits=2);#coeficient beta
+                          HR <-signif(x$coef[2], digits=2);#exp(beta)
+                          HR.confint.lower <- signif(x$conf.int[,"lower .95"], 2)
+                          HR.confint.upper <- signif(x$conf.int[,"upper .95"],2)
+                          HR <- paste0(HR, " (", 
+                                       HR.confint.lower, "-", HR.confint.upper, ")")
+                          res<-c(beta, HR, wald.test, p.value)
+                          names(res)<-c("beta", "HR (95% CI for HR)", "wald.test", 
+                                        "p.value")
+                          return(res)
+                          #return(exp(cbind(coef(x),confint(x))))
+                         })
+res <- t(as.data.frame(univ_results, check.names = TRUE))
+## as.data.frame(res)
+stargazer(res, type = 'text', title='Univariate Cox Regression (OS)')
+summary(coxph(Surv(OS, vital.status)~factor(factorMet), data = met))
+summary(coxph(Surv(OS, vital.status)~factor(ecog), data = met))
+```
+
+## LA Cohort Only
+
+Univariate analysis of LA cohort.
+
+### PFS
+
+```{r lacohortuniPFS, echo=FALSE}
+vars <- c('exoDNA', 'exo5', 'exo1', 'exo', 'log2exo','total.DNA.yield.exo', 'exoDNA.mut.ng.ml', 'genomic.equivalents.exo', 'log2cf', 'cfDNA', 'cf1', 'cf', 'total.DNA.yield.cf', 'cfDNA.mut.ng.ml', 'genomic.equivalents.cf', 'exoorcf', 'exoandcf', 'Age', 'gender', 'logCA19', 'ecog', 'Regimen', 'SLD', 'CA19.300')
+univ_formulas <- sapply(vars, function(x) as.formula(paste('Surv(PFS, Progression)~', x)))
+univ_models <- lapply( univ_formulas, function(x){coxph(x, data = la)})
+univ_results <- lapply(univ_models,
+                       function(x){ 
+                          x <- summary(x)
+                          p.value<-signif(x$wald["pvalue"], digits=2)
+                          wald.test<-signif(x$wald["test"], digits=2)
+                          beta<-signif(x$coef[1], digits=2);#coeficient beta
+                          HR <-signif(x$coef[2], digits=2);#exp(beta)
+                          HR.confint.lower <- signif(x$conf.int[,"lower .95"], 2)
+                          HR.confint.upper <- signif(x$conf.int[,"upper .95"],2)
+                          HR <- paste0(HR, " (", 
+                                       HR.confint.lower, "-", HR.confint.upper, ")")
+                          res<-c(beta, HR, wald.test, p.value)
+                          names(res)<-c("beta", "HR (95% CI for HR)", "wald.test", 
+                                        "p.value")
+                          return(res)
+                          #return(exp(cbind(coef(x),confint(x))))
+                         })
+res <- t(as.data.frame(univ_results, check.names = TRUE))
+## as.data.frame(res)
+stargazer(res, type = 'text', title='Univariate Cox Regression (PFS)')
+```
+```{r lacohortuniOS, echo=FALSE}
+vars <- c('exoDNA', 'exo5', 'exo1', 'exo', 'log2exo','total.DNA.yield.exo', 'exoDNA.mut.ng.ml', 'genomic.equivalents.exo', 'log2cf', 'cfDNA', 'cf1', 'cf', 'total.DNA.yield.cf', 'cfDNA.mut.ng.ml', 'genomic.equivalents.cf', 'exoorcf', 'exoandcf', 'Age', 'gender', 'logCA19', 'ecog', 'Regimen', 'SLD', 'CA19.300')
+univ_formulas <- sapply(vars, function(x) as.formula(paste('Surv(OS, vital.status)~', x)))
+univ_models <- lapply( univ_formulas, function(x){coxph(x, data = la)})
+univ_results <- lapply(univ_models,
+                       function(x){ 
+                          x <- summary(x)
+                          p.value<-signif(x$wald["pvalue"], digits=2)
+                          wald.test<-signif(x$wald["test"], digits=2)
+                          beta<-signif(x$coef[1], digits=2);#coeficient beta
+                          HR <-signif(x$coef[2], digits=2);#exp(beta)
+                          HR.confint.lower <- signif(x$conf.int[,"lower .95"], 2)
+                          HR.confint.upper <- signif(x$conf.int[,"upper .95"],2)
+                          HR <- paste0(HR, " (", 
+                                       HR.confint.lower, "-", HR.confint.upper, ")")
+                          res<-c(beta, HR, wald.test, p.value)
+                          names(res)<-c("beta", "HR (95% CI for HR)", "wald.test", 
+                                        "p.value")
+                          return(res)
+                          #return(exp(cbind(coef(x),confint(x))))
+                         })
+res <- t(as.data.frame(univ_results, check.names = TRUE))
+## as.data.frame(res)
+stargazer(res, type = 'text', title='Univariate Cox Regression (OS)')
+```
+
+# Multivariate
+
+Multivariate Cox Regression (PFS). Covariates are determined by previous significance in other publications and from p values under ~.25
+
+## Both
+
+```{r multivariate, echo=FALSE}
+covars <- c('gender', 'factor(ecog)', 'Regimen', 'factor(factorMet)', 'CA19.300')
+covars.col <- paste(covars, collapse="+")
+form <- as.formula(paste("Surv(PFS, Progression) ~ exo5+cf+",covars.col,sep=''))
+pfs.cox <- coxph(form, data=df )
+# pfsexo.cox <- coxph(Surv(PFS, Progression) ~ exo5 + SLD + factor(factorMet)  + CA19.300 + Regimen + gender + ecog, data=df )
+# pfscf.cox <- coxph(Surv(PFS, Progression) ~ cf + SLD + factor(factorMet)  + CA19.300 + Regimen +gender + ecog, data=df )
+# form <- as.formula(paste("Surv(PFS, Progression) ~ exoorcf+",covars.col,sep=''))
+# pfsor.cox <- coxph(form, data=df )
+# form <- as.formula(paste("Surv(PFS, Progression) ~ exoandcf+",covars.col,sep=''))
+# pfsand.cox <- coxph(form, data=df )
+
+covars <- c('ecog', 'Regimen', 'factor(factorMet)', 'CA19.300', 'SLD')
+covars.col <- paste(covars, collapse="+")
+form <- as.formula(paste("Surv(OS, vital.status) ~ exo5+cf+",covars.col,sep=''))
+os.cox <- coxph(form, data=df )
+# osexo.cox <- coxph(Surv(OS, vital.status) ~ exo5 + SLD + factor(factorMet) +CA19.300 +  gender + Regimen, data=df )
+# oscf.cox <- coxph(Surv(OS, vital.status) ~ cf + SLD + factor(factorMet)  + CA19.300 + gender + Regimen, data=df )
+# form <- as.formula(paste("Surv(OS, vital.status) ~ exoorcf+",covars.col,sep=''))
+# osor.cox <- coxph(form, data=df )
+# form <- as.formula(paste("Surv(OS, vital.status) ~ exoandcf+",covars.col,sep=''))
+#osand.cox <- coxph(form, data=df )
+
+stargazer(pfs.cox, os.cox, type='text', title='Multivariate Cox Regresssion Analysis')
+#stargazer(pfsor.cox, pfsand.cox, osor.cox, osand.cox, type='text', title='Multivariate Cox Regression (and/or)')
+```
+
+### Summarys
+
+Summary's of each regression
+
+#### PFS
+
+
+```{r pfs.cox}
+pfs.cox
+```
+
+exoDNA or cfDNA
+```{r pfsor.cox}
+# pfsor.cox
+```
+
+exoDNA and cfDNA
+```{r pfsand.cox}
+# pfsand.cox
+```
+
+#### OS
+
+```{r os.cox}
+os.cox
+```
+
+exoDNA or cfDNA
+```{r osor.cox}
+# osor.cox
+```
+
+exoDNA and cfDNA
+```{r osand.cox}
+# osand.cox
+```
+
+### Residuals
+```{r bothresid, echo=FALSE}
+resid.pfs.cox <- cox.zph(pfs.cox)
+# resid.pfsor.cox <- cox.zph(pfsor.cox)
+#resid.pfsand.cox <- cox.zph(pfsand.cox)
+resid.os.cox <- cox.zph(os.cox)
+# resid.osor.cox <- cox.zph(osor.cox)
+# resid.osand.cox <- cox.zph(osand.cox)
+```
+#### PFS
+
+```{r resid.pfs.cox}
+ggcoxzph(resid.pfs.cox)
+resid.pfs.cox
+```
+
+exoDNA or cfDNA
+```{r resid.pfsor.cox}
+# ggcoxzph(resid.pfsor.cox)
+# resid.pfsor.cox
+```
+
+exoDNA or cfDNA
+```{r resid.pfsand.cox}
+# ggcoxzph(resid.pfsand.cox)
+# resid.pfsand.cox
+```
+
+#### OS
+
+```{r resid.os.cox}
+ggcoxzph(resid.os.cox)
+resid.os.cox
+```
+
+exoDNA or cfDNA
+```{r resid.osor.cox}
+# ggcoxzph(resid.osor.cox)
+# resid.osor.cox
+```
+
+exoDNA and cfDNA
+```{r resid.osand.cox}
+# ggcoxzph(resid.osand.cox)
+# resid.osand.cox
+```
+## Multivariate for Met Cohort only
+
+LA population is too small for multivariate analysis
+
+```{r metmulti, echo=FALSE}
+covars <- c('gender', 'factor(ecog)', 'Regimen', 'factor(factorMet)', 'CA19.300')
+covars.col <- paste(covars, collapse="+")
+form <- as.formula(paste("Surv(PFS, Progression) ~ exo5+cf+",covars.col,sep=''))
+metpfs.cox <- coxph(form, data=met )
+# metpfsexo.cox <- coxph(Surv(PFS, Progression) ~ exo5 + SLD + factor(factorMet)  + CA19.300 + Regimen + gender, data=met )
+# metpfscf.cox <- coxph(Surv(PFS, Progression) ~ cf + SLD + factor(factorMet)  + CA19.300 + Regimen +gender, data=met )
+# form <- as.formula(paste("Surv(PFS, Progression) ~ exoorcf+",covars.col,sep=''))
+# metpfsor.cox <- coxph(form, data=met )
+# form <- as.formula(paste("Surv(PFS, Progression) ~ exoandcf+",covars.col,sep=''))
+# metpfsand.cox <- coxph(form, data=met )
+
+covars <- c('ecog', 'Regimen', 'factor(factorMet)', 'CA19.300')
+covars.col <- paste(covars, collapse="+")
+metos.cox <- coxph(Surv(OS, vital.status) ~ exo5 + cf + SLD + factor(factorMet) + CA19.300 + gender + Regimen, data=met )
+#metosexo.cox <- coxph(Surv(OS, vital.status) ~ exo5 + SLD + factor(factorMet) +CA19.300 +  gender + Regimen, data=met )
+#metoscf.cox <- coxph(Surv(OS, vital.status) ~ cf + SLD + factor(factorMet)  + CA19.300 + gender + Regimen, data=met )
+# metosor.cox <- coxph(Surv(OS, vital.status) ~ exoorcf + SLD + factor(factorMet)  + CA19.300 + gender + Regimen, data=met )
+# metosand.cox <- coxph(Surv(OS, vital.status) ~ exoandcf + SLD + factor(factorMet) + CA19.300 + gender + Regimen, data=met )
+
+stargazer(metpfs.cox, metos.cox, type='text', title='Multivariate Cox Regresssion Analysis')
+# stargazer(metpfsor.cox, metpfsand.cox, metosor.cox, metosand.cox, type='text', title='Multivariate Cox Regression (and/or)')
+```
+
+### Summarys
+
+Summary's of each regression
+
+#### PFS
+
+
+```{r metpfs.cox}
+summary(metpfs.cox)
+```
+
+exoDNA or cfDNA
+```{r metpfsor.cox}
+# summary(metpfsor.cox)
+```
+
+exoDNA and cfDNA
+```{r metpfsand.cox}
+# summary(metpfsand.cox)
+```
+
+#### OS
+
+```{r metos.cox}
+summary(metos.cox)
+```
+
+exoDNA or cfDNA
+```{r metosor.cox}
+# summary(metosor.cox)
+```
+
+exoDNA and cfDNA
+```{r metosand.cox}
+# summary(metosand.cox)
+```
+
+### Residuals
+```{r metresid, echo=FALSE}
+resid.metpfs.cox <- cox.zph(metpfs.cox)
+#resid.metpfsor.cox <- cox.zph(metpfsor.cox)
+# resid.metpfsand.cox <- cox.zph(metpfsand.cox)
+resid.metos.cox <- cox.zph(metos.cox)
+# resid.metosor.cox <- cox.zph(metosor.cox)
+# resid.metosand.cox <- cox.zph(metosand.cox)
+```
+#### PFS
+
+```{r resid.metpfs.cox}
+ggcoxzph(resid.metpfs.cox)
+resid.metpfs.cox
+```
+
+exoDNA or cfDNA
+```{r resid.metpfsor.cox}
+# ggcoxzph(resid.metpfsor.cox)
+# resid.metpfsor.cox
+```
+
+exoDNA or cfDNA
+```{r resid.metpfsand.cox}
+# ggcoxzph(resid.metpfsand.cox)
+# resid.metpfsand.cox
+```
+
+#### OS
+
+```{r resid.metos.cox}
+ggcoxzph(resid.metos.cox)
+resid.metos.cox
+```
+
+exoDNA or cfDNA
+```{r resid.metosor.cox}
+# ggcoxzph(resid.metosor.cox)
+# resid.metosor.cox
+```
+
+exoDNA or cfDNA
+```{r resid.metosand.cox}
+# ggcoxzph(resid.metosand.cox)
+# resid.metosand.cox
+```
+
+# Plots
+
+```{r plotOptions, echo=FALSE}
+axii.text <- element_text(face = "bold", size = 20)
+
+```
+
+## Kaplan-Meier
+Kaplan meier's are met only
+```{r kmsetup, echo=FALSE}
+### PFS
+pfs.km <- survfit(Surv(PFS, Progression) ~ 1, data=met)
+pfs.exo5.km <- survfit(Surv(PFS, Progression) ~ exo5, data=met)
+pfs.cf.km <- survfit(Surv(PFS, Progression) ~ cf, data=met)
+# pfs.exoorcf.km <- survfit(Surv(PFS, Progression) ~ exoorcf, data=met)
+# pfs.exoandcf.km <- survfit(Surv(PFS, Progression) ~ exoandcf, data=met)
+### OS
+os.km <- survfit(Surv(OS, vital.status) ~ 1, data=met)
+os.exo5.km <- survfit(Surv(OS, vital.status) ~ exo5, data=met)
+os.cf.km <- survfit(Surv(PFS, vital.status) ~ cf, data=met)
+# os.exoorcf.km <- survfit(Surv(PFS, vital.status) ~ exoorcf, data=met)
+# os.exoandcf.km <- survfit(Surv(PFS, vital.status) ~ exoandcf, data=met)
+```
+### Plain Jane KM for PFS and OS
+
+PFS
+```{r pfs.km}
+ggsurvplot(pfs.km, palette="#2E9FDF")
+```
+
+OS
+```{r os.km}
+ggsurvplot(os.km, palette="#2E9FDF")
+```
+
+### ExoDNA MAF > 5%
+
+PFS
+```{r pfs.exo5.km}
+ggsurvplot(pfs.exo5.km)
+```
+
+OS
+```{r os.exo5.km}
+ggsurvplot(os.exo5.km)
+```
+
+### CfDNA detection
+PFS
+```{r pfs.cf.km}
+ggsurvplot(pfs.cf.km)
+```
+OS
+```{r os.cf.km}
+ggsurvplot(os.cf.km)
+```
+
+### ExoDNA or cfDNA
+PFS
+```{r pfs.exoorcf.km}
+# ggsurvplot(pfs.exoorcf.km)
+```
+OS
+```{r os.exoorcf.km}
+# ggsurvplot(os.exoorcf.km)
+```
+
+### ExoDNA and cfDNA
+PFS
+```{r pfs.exoandcf.km}
+# ggsurvplot(pfs.exoandcf.km)
+```
+OS
+```{r os.exoandcf.km}
+# ggsurvplot(os.exoandcf.km)
+```
+
+## Non Survival Related
+
+These include GLM and Boxplots
+
+### Both Met and LA
+
+#### GLM 
+
+Covers mostly the supplementary tables that we may use. These graphs are both LA and MET cohorts including all metastasis.
+
+```{r plotsGLMboth, echo=FALSE}
+## GLM
+## exoDNA
+SLDvexo <- ggplot(df, aes(x=SLD, y=log2exo)) + geom_point(aes(color=Metastasis, shape=Metastasis)) + stat_smooth(method='glm') + theme_bw(base_size = 14) + labs(x='SLD (mm)', y=expression(log[2](exoDNA~MAF + 1))) + theme(legend.text=element_text(size=9))
+SLDvexong <- ggplot(df, aes(x=SLD, y=log2exong)) + geom_point(aes(color=Metastasis, shape=Metastasis)) + stat_smooth(method='glm') + theme_bw(base_size = 14) + labs(x='SLD (mm)', y=expression(log[2](exoDNA~ng/mL + 1))) + theme(legend.text=element_text(size=9))
+plot(SLDvexo)
+plot(SLDvexong)
+
+## CFDNA
+SLDvcf <- ggplot(df, aes(x=SLD, y=log2cf)) + geom_point(aes(color=Metastasis, shape=Metastasis)) + stat_smooth(method='glm') + theme_bw(base_size=14) + labs(x='SLD (mm)', y=expression(log[2](cfDNA~MAF + 1))) + theme(legend.text=element_text(size=9))
+SLDvcfng <- ggplot(df, aes(x=SLD, y=log2cfng)) + geom_point(aes(color=Metastasis, shape=Metastasis)) + stat_smooth(method='glm')+ theme_bw(base_size=14) + labs(x='SLD (mm)', y=expression(log[2](cfDNA~ng/mL + 1))) + theme(legend.text=element_text(size=9))
+plot(SLDvcf)
+plot(SLDvcfng)
+
+## vs one another
+exovcf <- ggplot(df, aes(x=log2exo, y=log2cf)) + geom_point(aes(color=Metastasis, shape=Metastasis)) + stat_smooth(method='glm')+ theme_bw(base_size=14) + labs(x=expression(log[2](exoDNA~MAF + 1)), y=expression(log[2](cfDNA~MAF + 1))) + theme(legend.text=element_text(size=9))
+plot(exovcf)
+```
+
+#### Box/Jitter Both
+
+```{r plotsJitterBoxBoth, echo=FALSE}
+## Box/Jitter
+## Met vs 
+Metvexo <- ggplot(df, aes(x=Metastasis, y=log2exo, color=Metastasis, shape=Metastasis)) + geom_boxplot(alpha=.01) + geom_jitter()+ theme_bw(base_size=14) + guides(color = FALSE, shape=FALSE) + labs(y=expression(log[2](exoDNA~MAF +1)))
+Metvcf <- ggplot(df, aes(x=Metastasis, y=log2cf, color=Metastasis, shape=Metastasis)) + geom_boxplot(alpha=0.01) + geom_jitter()+ theme_bw(base_size = 14)+ guides(color = FALSE, shape=FALSE) + labs(y=expression(log[2](cfDNA~MAF +1)))
+MetvSLD <- ggplot(df, aes(x=Metastasis, y=SLD, color=Metastasis, shape=Metastasis)) + geom_boxplot(alpha=.01) + geom_jitter()+ theme_bw(base_size=14) + guides(color = FALSE, shape=FALSE) + labs(y='SLD (mm)')
+plot(Metvexo)
+plot(Metvcf)
+plot(MetvSLD)
+
+## LA/Met
+stagevexo <- ggplot(df, aes(x=clinical.stage, y=log2exo)) + geom_boxplot(alpha=.01, width=.5) + geom_jitter( aes(color=Metastasis, shape=Metastasis), width=.25)+ theme_bw(base_size=14) + labs(y=expression(log[2](exoDNA~MAF + 1)), x='Clinical Stage')+ theme(legend.text=element_text(size=9))
+plot(stagevexo)
+stagevexong <- ggplot(df, aes(x=clinical.stage, y=log2exong)) + geom_boxplot(alpha=.01, width=.5) + geom_jitter(aes(color=Metastasis, shape=Metastasis))+ theme_bw(base_size=14) + labs(y=expression(log[2](exoDNA~ng/mL + 1)), x='Clinical Stage')+ theme(legend.text=element_text(size=9))
+plot(stagevexong)
+stagevcf <- ggplot(df, aes(x=clinical.stage, y=log2cf)) + geom_boxplot(alpha=.01, width=.5) + geom_jitter(aes(color=Metastasis, shape=Metastasis))+ theme_bw(base_size=14) + labs(y=expression(log[2](cfDNA~MAF + 1)), x='Clinical Stage')
+plot(stagevcf)+ theme(legend.text=element_text(size=9))
+stagevcfng <- ggplot(df, aes(x=clinical.stage, y=log2cfng)) + geom_boxplot(alpha=.01, width=.5) + geom_jitter(aes(color=Metastasis, shape=Metastasis))+ theme_bw(base_size=14) + labs(y=expression(log[2](cfDNA~ng/mL + 1)), x='Clinical Stage')+ theme(legend.text=element_text(size=9))
+plot(stagevcfng)
+
+## Prog/none
+progvexo <- ggplot(df, aes(x=factor(Progression), y=log2exo)) + geom_boxplot(alpha=.01, width=.5) + geom_jitter(aes(color=Metastasis, shape=Metastasis), width=.25)+ theme_bw(base_size = 14) + labs(y=expression(log[2](exoDNA~MAF + 1)), x='Progression') + scale_x_discrete(labels=c("0" = "No Progression", "1" = "Progression"))+ theme(legend.text=element_text(size=9))
+plot(progvexo)
+progvexong <- ggplot(df, aes(x=factor(Progression), y=log2exong)) + geom_boxplot(alpha=.01, width=.5) + geom_jitter(aes(color=Metastasis, shape=Metastasis), width=.25)+ theme_bw(base_size = 14) + labs(y=expression(log[2](exoDNA~ng/mL + 1)), x='Progression') + scale_x_discrete(labels=c("0" = "No Progression", "1" = "Progression"))+ theme(legend.text=element_text(size=9))
+plot(progvexong)
+progvcf <- ggplot(df, aes(x=factor(Progression), y=log2cf)) + geom_boxplot(alpha=.01, width=.5) + geom_jitter(aes(color=Metastasis, shape=Metastasis), width=.25)+ theme_bw(base_size = 14) + labs(y=expression(log[2](cfDNA~MAF + 1)), x='Progression') + scale_x_discrete(labels=c("0" = "No Progression", "1" = "Progression"))+ theme(legend.text=element_text(size=9))
+plot(progvcf)
+progvcfng <- ggplot(df, aes(x=factor(Progression), y=log2cfng)) + geom_boxplot(alpha=.01, width=.5) + geom_jitter(aes(color=Metastasis, shape=Metastasis), width=.25)+ theme_bw(base_size = 14) + labs(y=expression(log[2](exoDNA~ng/mL + 1)), x='Progression') + scale_x_discrete(labels=c("0" = "No Progression", "1" = "Progression")) + theme(legend.text=element_text(size=9))
+plot(progvcfng)
+
+```
+
+### Just Met
+
+#### GLM
+
+```{r plotsGLMmet, echo=FALSE}
+## GLM
+## exoDNA
+SLDvexo <- ggplot(met, aes(x=SLD, y=exoDNA)) + geom_point(aes(color=Metastasis, shape=Metastasis), size=2.5) + stat_smooth(method='glm') + theme_bw(base_size = 25) + labs(x='SLD (mm)', y=expression(exo*italic(KRAS)~MAF)) + theme(legend.text=element_text(size=15)) + annotate("text", x=160, y=50, label="f(x) = 1.336 + 0.07376x \n p = 0.0353", size = 10)
+SLDvexong <- ggplot(met, aes(x=SLD, y=log2exong)) + geom_point(aes(color=Metastasis, shape=Metastasis)) + stat_smooth(method='glm') + theme_bw(base_size = 14) + labs(x='SLD (mm)', y=expression(log[2](exoDNA~ng/mL + 1))) + theme(legend.text=element_text(size=9))
+plot(SLDvexo)
+plot(SLDvexong)
+
+## CFDNA
+SLDvcf <- ggplot(met, aes(x=SLD, y=cfDNA)) + geom_point(aes(color=Metastasis, shape=Metastasis), size=2.5) + stat_smooth(method='glm') + theme_bw(base_size=25) + labs(x='SLD (mm)', y=expression(ct*italic(KRAS)~MAF)) + theme(legend.text=element_text(size=15)) + annotate("text", x=60, y=55, label="f(x) = -3.154 + 0.1134x \n p = 0.000848", size=10)
+SLDvcfng <- ggplot(met, aes(x=SLD, y=log2cfng)) + geom_point(aes(color=Metastasis, shape=Metastasis)) + stat_smooth(method='glm')+ theme_bw(base_size=14) + labs(x='SLD (mm)', y=expression(log[2](cfDNA~ng/mL + 1))) + theme(legend.text=element_text(size=9))
+plot(SLDvcf)
+plot(SLDvcfng)
+
+## vs one another
+exovcf <- ggplot(met, aes(x=log2exo, y=log2cf)) + geom_point(aes(color=Metastasis, shape=Metastasis)) + stat_smooth(method='glm')+ theme_bw(base_size=14) + labs(x=expression(log[2](exoDNA~MAF + 1)), y=expression(log[2](cfDNA~MAF + 1))) + theme(legend.text=element_text(size=9))
+plot(exovcf)
+```
+
+#### Box/Jitter
+
+```{r plotsJitterBoxmet, echo=FALSE}
+comp <- list(c('Liver', 'Lung'), c('Liver', 'Peritoneal'), c('Lung', 'Peritoneal'))
+## Box/Jitter
+## Met vs 
+## Metvexo <- ggplot(met, aes(x=Metastasis, y=log10exo, color=Metastasis, shape=Metastasis)) + geom_boxplot(alpha=.01) + geom_jitter()+ theme_bw(base_size=25) + guides(color = FALSE, shape=FALSE) + labs(y=expression(log[10](exoDNA~MAF +1))) + stat_compare_means(comparisons = comp) + stat_compare_means(label.y=2.5)
+Metvexol <- ggplot(met, aes(x=Metastasis, y=exop1, color=Metastasis, shape=Metastasis)) + geom_boxplot(alpha=.01) + geom_jitter(size=3)+ theme_bw(base_size=25) + guides(color = FALSE, shape=FALSE) + labs(y=expression(exo*italic(KRAS)~MAF~(log[10]))) + stat_compare_means(comparisons = comp, method='wilcox.test', size=1.5) + stat_compare_means(label.y=2.25, size=8) + scale_y_continuous(trans='log10') + annotation_logticks(sides = 'lr')
+## Metvcf <- ggplot(met, aes(x=Metastasis, y=log10cf, color=Metastasis, shape=Metastasis)) + geom_boxplot(alpha=0.01) + geom_jitter()+ theme_bw(base_size = 25)+ guides(color = FALSE, shape=FALSE) + labs(y=expression(log[10](cfDNA~MAF +1))) + stat_compare_means(comparisons = comp) + stat_compare_means(label.y=2.5)
+Metvcfl <- ggplot(met, aes(x=Metastasis, y=cfp1, color=Metastasis, shape=Metastasis)) + geom_boxplot(alpha=0.01) + geom_jitter(size=3)+ theme_bw(base_size = 25)+ guides(color = FALSE, shape=FALSE) + labs(y=expression(ct*italic(KRAS)~MAF~(log[10]))) + stat_compare_means(comparisons = comp, size=2) + stat_compare_means(label.y=2.25, size=8) + scale_y_continuous(trans='log10')  + annotation_logticks(sides='lr')
+MetvSLD <- ggplot(met, aes(x=Metastasis, y=SLD, color=Metastasis, shape=Metastasis)) + geom_boxplot(alpha=.01) + geom_jitter(size=3)+ theme_bw(base_size=25) + guides(color = FALSE, shape=FALSE) + labs(y='SLD (mm)') +stat_compare_means(comparisons = comp, size=1.5) + stat_compare_means(label.y=260, size=8)
+plot(Metvexol)
+plot(Metvcfl)
+plot(MetvSLD)
+
+## Prog/none
+progvexo <- ggplot(met, aes(x=factor(Progression), y=log2exo)) + geom_boxplot(alpha=.01, width=.5) + geom_jitter(aes(color=Metastasis, shape=Metastasis), width=.25)+ theme_bw(base_size = 14) + labs(y=expression(log[2](exoDNA~MAF + 1)), x='Progression') + scale_x_discrete(labels=c("0" = "No Progression", "1" = "Progression"))+ theme(legend.text=element_text(size=9))
+plot(progvexo)
+progvexong <- ggplot(met, aes(x=factor(Progression), y=log2exong)) + geom_boxplot(alpha=.01, width=.5) + geom_jitter(aes(color=Metastasis, shape=Metastasis), width=.25)+ theme_bw(base_size = 14) + labs(y=expression(log[2](exoDNA~ng/mL + 1)), x='Progression') + scale_x_discrete(labels=c("0" = "No Progression", "1" = "Progression"))+ theme(legend.text=element_text(size=9))
+plot(progvexong)
+progvcf <- ggplot(met, aes(x=factor(Progression), y=log2cf)) + geom_boxplot(alpha=.01, width=.5) + geom_jitter(aes(color=Metastasis, shape=Metastasis), width=.25)+ theme_bw(base_size = 14) + labs(y=expression(log[2](cfDNA~MAF + 1)), x='Progression') + scale_x_discrete(labels=c("0" = "No Progression", "1" = "Progression"))+ theme(legend.text=element_text(size=9))
+plot(progvcf)
+progvcfng <- ggplot(met, aes(x=factor(Progression), y=log2cfng)) + geom_boxplot(alpha=.01, width=.5) + geom_jitter(aes(color=Metastasis, shape=Metastasis), width=.25)+ theme_bw(base_size = 14) + labs(y=expression(log[2](exoDNA~ng/mL + 1)), x='Progression') + scale_x_discrete(labels=c("0" = "No Progression", "1" = "Progression")) + theme(legend.text=element_text(size=9))
+plot(progvcfng)
+
+## ECOG
+comp2 <- list(c('0','2'),  c('1', '2'), c('2','3'))
+comptest <- list(c('0','2'),  c('1', '2'), c('2','3'), c('0','1'), c('0', '3'), c('1','3'))
+ecogvexol <- ggplot(subset(met, !is.na(ecog)), aes(x=factor(ecog), y=exop1, color=ecog, na.rm=TRUE)) + geom_boxplot(alpha=.01) + geom_jitter(size=3)+ theme_bw(base_size=25) + guides(color = FALSE, shape=FALSE) + labs(y=expression(exo*italic(KRAS)~MAF~(log[10])), x="ECOG") + stat_compare_means(comparisons = comptest, method='wilcox.test', size=1.5) + stat_compare_means(label.y=2.25, size=8) + scale_y_continuous(trans='log10') + annotation_logticks(sides = 'lr') + theme(axis.text = axii.text)
+ecogvcfl <- ggplot(subset(met, !is.na(ecog)), aes(x=factor(ecog), y=cfp1, color=ecog, na.rm=TRUE)) + geom_boxplot(alpha=.01) + geom_jitter(size=3)+ theme_bw(base_size=25) + guides(color = FALSE, shape=FALSE) + labs(y=expression(ct*italic(KRAS)~MAF~(log[10])), x="ECOG") + stat_compare_means(label.y=2.25, size=8) + scale_y_continuous(trans='log10') + annotation_logticks(sides = 'lr') + theme(axis.text=axii.text) +stat_compare_means(comparisons = comptest, method='wilcox.test', size=1.5)
+plot(ecogvexol)
+plot(ecogvcfl)
+```
+
+### LA
+
+#### GLM
+
+```{r plotsGLMLA, echo=FALSE}
+## GLM
+## exoDNA
+laSLDvexo <- ggplot(la, aes(x=SLD, y=exoDNA)) + geom_point(size=2.5) + stat_smooth(method='glm') + theme_bw(base_size = 25) + labs(x='SLD (mm)', y=expression(exo*italic(KRAS)~MAF)) + theme(legend.text=element_text(size=15))
+laSLDvexong <- ggplot(la, aes(x=SLD, y=log2exong)) + geom_point() + stat_smooth(method='glm') + theme_bw(base_size = 14) + labs(x='SLD (mm)', y=expression(log[2](exoDNA~ng/mL + 1))) + theme(legend.text=element_text(size=9))
+plot(laSLDvexo)
+plot(laSLDvexong)
+
+## CFDNA
+laSLDvcf <- ggplot(la, aes(x=SLD, y=cfDNA)) + geom_point(size=2.5) + stat_smooth(method='glm') + theme_bw(base_size=25) + labs(x='SLD (mm)', y=expression(ct*italic(KRAS)~MAF)) + theme(legend.text=element_text(size=15))
+laSLDvcfng <- ggplot(la, aes(x=SLD, y=log2cfng)) + geom_point() + stat_smooth(method='glm')+ theme_bw(base_size=14) + labs(x='SLD (mm)', y=expression(log[2](cfDNA~ng/mL + 1))) + theme(legend.text=element_text(size=9))
+plot(laSLDvcf)
+plot(laSLDvcfng)
+
+## vs one another
+laexovcf <- ggplot(la, aes(x=log2exo, y=log2cf)) + geom_point(aes(color=Metastasis, shape=Metastasis)) + stat_smooth(method='glm')+ theme_bw(base_size=14) + labs(x=expression(log[2](exoDNA~MAF + 1)), y=expression(log[2](cfDNA~MAF + 1))) + theme(legend.text=element_text(size=9))
+plot(laexovcf)
+```
+
+#### Box/Jitter
+
+```{r plotsBJLA, echo=FALSE}
+
+Metvexol <- ggplot(met, aes(x=Metastasis, y=exop1, color=Metastasis, shape=Metastasis)) + geom_boxplot(alpha=.01) + geom_jitter(size=3)+ theme_bw(base_size=25) + guides(color = FALSE, shape=FALSE) + labs(y=expression(exo*italic(KRAS)~MAF~(log[10]))) + stat_compare_means(comparisons = comp, method='wilcox.test', size=1.5) + stat_compare_means(label.y=2.25, size=8) + scale_y_continuous(trans='log10') + annotation_logticks(sides = 'lr')
+
+```
+
+### Comparing Resectables with Unresectables
+
+#### exoDNA and cfDNA
+
+```{r plotsCohorts, echo=FALSE}
+exostage <- ggplot(NULL)
+```
