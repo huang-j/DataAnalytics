@@ -43,10 +43,8 @@ df['exoorcf'] = np.where( (df['exoDNA'] > 5) | (df['cfDNA'] > 0), 1, 0);
 df['exoandcf'] = np.where( (df['exoDNA'] > 5) & (df['cfDNA'] > 0), 1, 0);
 df['CA19-9'] = pd.to_numeric(df['CA19-9'], errors='coerce')
 df['CA19.300'] = df['CA19-9'].apply(lambda x: 1 if (x >= 300)  & (x != '') else 0) 
-df.to_csv('genericfilenametest.csv', sep=',')
+df.to_csv('genericfilename.csv', sep=',')
 met = df.loc[df['clinical stage'] == 'Stage IV']
-met.to_csv('genericfilename1test.csv', sep=',')
-metspec = met.loc[(met['Metastasis'] != 'Ovarian') & (met['Metastasis'] != 'Lymph Node')]
-metspec.to_csv('genericfilename1v2.csv', sep=',')
+met.to_csv('genericfilename1.csv', sep=',')
 la = df.loc[df['clinical stage'] != 'Stage IV']
-la.to_csv('genericfilename2test.csv', sep=',')
+la.to_csv('genericfilename2.csv', sep=',')
