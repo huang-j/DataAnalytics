@@ -1,0 +1,270 @@
+---
+title: "Particle Metrix Distributions"
+author: "Jonathan"
+date: "December 4, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+This is a Markdown file designed to specifically to provide and overview and breakdown of distribution data for particle metrix data. Due to data storage issues, there are raw files that cannot be analyzed (for smaller bins). As such, the primary variables (bins) of interest will be the following:
+
+* 0-40
+* 40-150
+* 150-1000
+* >1000
+
+```{r datasetup, echo=FALSE}
+library(ggplot2)
+library(ggpubr)
+library(reshape2)
+pmdata = read.csv('pmData.csv', sep=',', na.strings = c('', ' '))
+pmdata$firstdraw = grepl(".*-1$", pmdata$Draw.ID)
+columns= c('X0.40.', 'X40.150.', 'X150.1000.', 'X.1000.')
+```
+
+## Plots
+
+Primarily will be density plots.
+
+### Distribution of concentrations
+
+```{r distconc, echo=FALSE}
+concd <- ggplot(pmdata, aes(Concentration.of.Exosomes, color=Tumor.Type)) + geom_density(alpha=.1) + labs(x=('Percentage'), title='Concentration distribution for all Tumor Types') + scale_x_log10()
+plot(concd)
+```
+
+### General Distribution
+
+Covers all the samples, regardless of status, etc. likely to be confounded and not particularly useful, but may serve to give a general overview of patients.
+
+#### Distribution
+
+```{r general, echo=FALSE}
+dd <- melt(pmdata, measure.vars=columns)
+gen <- ggplot(dd, aes(value, ..count..,fill=variable, color=variable)) + geom_density(alpha=.1) + labs(x=('Percentage'), title='Distribution of All Samples')
+plot(gen)
+```
+
+### Subsets
+
+Subsets of the data (e.g. BTN, Tumor Type, etc.)
+
+#### Baseline Treatment Naive
+
+Includes only the first baseline treatment naive draws (X*-1)
+
+```{r btn, echo=FALSE}
+btn = subset(pmdata, pmdata$Baseline.Treatment.Naive == 1 & pmdata$firstdraw == TRUE) 
+dd <- melt(btn, measure.vars=columns)
+pbtn <- ggplot(dd, aes(value, ..count..,fill=variable, color=variable)) + geom_density(alpha=.1) + labs(x=('Percentage'), title='Baseline Treatment Naive Samples')
+plot(pbtn)
+```
+
+##### Stratify on Gender
+
+Compare the distribution to gender
+
+```{r btngender, echo=FALSE}
+dd <- melt(subset(btn, btn$Gender == 'Male'), measure.vars=columns)
+pbtnmale <- ggplot(dd, aes(value, ..count..,fill=variable, color=variable)) + geom_density(alpha=.1) + labs(x=('Percentage'), title='Male Baseline Treatment Naive Samples')
+plot(pbtnmale)
+
+dd <- melt(subset(btn, btn$Gender == 'Female'), measure.vars=columns)
+pbtnfemale <- ggplot(dd, aes(value, ..count..,fill=variable, color=variable)) + geom_density(alpha=.1) + labs(x=('Percentage'), title='Female Baseline Treatment Naive Samples')
+plot(pbtnfemale)
+```
+
+#### Baseline Treated
+
+Compare to baseline treated
+
+```{r bt, echo=FALSE}
+bt = subset(pmdata, pmdata$Baseline.Treatment.Naive == 0) 
+dd <- melt(bt, measure.vars=columns)
+pbt <- ggplot(dd, aes(value, ..count..,fill=variable, color=variable)) + geom_density(alpha=.1) + labs(x=('Percentage'), title='Baseline Treated Samples')
+plot(pbt)
+```
+
+##### Stratify on Gender
+
+Compare the distribution to gender
+
+```{r btgender, echo=FALSE}
+dd <- melt(subset(bt, bt$Gender == 'Male'), measure.vars=columns)
+pbtmale <- ggplot(dd, aes(value, ..count..,fill=variable, color=variable)) + geom_density(alpha=.1) + labs(x=('Percentage'), title='Male Baseline Treated Samples')
+plot(pbtmale)
+
+dd <- melt(subset(bt, bt$Gender == 'Female'), measure.vars=columns)
+pbtfemale <- ggplot(dd, aes(value, ..count..,fill=variable, color=variable)) + geom_density(alpha=.1) + labs(x=('Percentage'), title='Female Baseline Treated Samples')
+plot(pbtfemale)
+```
+
+#### PDAC
+
+```{r pdac, echo=FALSE}
+pdac = subset(pmdata, pmdata$Tumor.Type == 'PDAC')
+dd <-melt(pdac, measure.vars=columns)
+ppdac <- ggplot(dd, aes(value, ..count..,fill=variable, color=variable)) + geom_density(alpha=.1) + labs(x=('Percentage'), title='PDAC Samples')
+plot(ppdac)
+```
+
+##### BTN + BT
+
+```{r pdacb, echo=FALSE}
+pdacbtn = subset(pdac, pdac$Baseline.Treatment.Naive == 1 & pdac$firstdraw == TRUE)
+dd <-melt(pdacbtn, measure.vars=columns)
+ppdacbtn <- ggplot(dd, aes(value, ..count..,fill=variable, color=variable)) + geom_density(alpha=.1) + labs(x=('Percentage'), title='PDAC BTN Samples')
+plot(ppdacbtn)
+
+pdacbt = subset(pdac, pdac$Baseline.Treatment.Naive == 0)
+dd <-melt(pdacbt, measure.vars=columns)
+ppdacbt <- ggplot(dd, aes(value, ..count..,fill=variable, color=variable)) + geom_density(alpha=.1) + labs(x=('Percentage'), title='PDAC BT Samples')
+plot(ppdacbt)
+```
+
+##### Stratify on Gender
+
+Compare the distribution to gender (BTN and TN)
+
+###### Male
+```{r pdacmale, echo=FALSE}
+dd <- melt(subset(pdacbtn, pdacbtn$Gender == 'Male'), measure.vars=columns)
+ppdacbtnmale <- ggplot(dd, aes(value, ..count..,fill=variable, color=variable)) + geom_density(alpha=.1) + labs(x=('Percentage'), title='Male PDAC BTN Samples')
+plot(ppdacbtnmale)
+
+dd <- melt(subset(pdacbt, pdacbt$Gender == 'Male'), measure.vars=columns)
+ppdacbtmale <- ggplot(dd, aes(value, ..count..,fill=variable, color=variable)) + geom_density(alpha=.1) + labs(x=('Percentage'), title='Male PDAC BT Samples')
+plot(ppdacbtmale)
+```
+
+###### Female
+```{r pdacfemale, echo=FALSE}
+dd <- melt(subset(pdacbtn, pdacbtn$Gender == 'Female'), measure.vars=columns)
+ppdacbtnfemale <- ggplot(dd, aes(value, ..count..,fill=variable, color=variable)) + geom_density(alpha=.1) + labs(x=('Percentage'), title='Female PDAC BTN Samples')
+plot(ppdacbtnfemale)
+
+dd <- melt(subset(pdacbt, pdacbt$Gender == 'Female'), measure.vars=columns)
+ppdacbtfemale <- ggplot(dd, aes(value, ..count..,fill=variable, color=variable)) + geom_density(alpha=.1) + labs(x=('Percentage'), title='Female PDAC BT Samples')
+plot(ppdacbtfemale)
+```
+
+##### Staging
+
+Stratify according to Clinical Staging as well as M staging
+
+```{r pdacstage, echo=FALSE}
+pdacIV <- subset(pdac, pdac$Clinical.Stage == 'Stage IV')
+pdacIII <- subset(pdac, pdac$Clinical.Stage == 'Stage III')
+pdacI.II <- subset(pdac, pdac$Clinical.Stage != 'Stage IV' & pdac$Clinical.Stage != 'Stage III')
+
+dd <- melt(pdacIV, measure.vars=columns)
+ppdacIV <- ggplot(dd, aes(value, ..count..,fill=variable, color=variable)) + geom_density(alpha=.1) + labs(x=('Percentage'), title='Stage IV PDAC Samples')
+plot(ppdacIV)
+
+dd <- melt(pdacIII, measure.vars=columns)
+ppdacIII <- ggplot(dd, aes(value, ..count.., fill=variable, color=variable)) + geom_density(alpha=.1) + labs(x=('Percentage'), title='Stage III PDAC Samples')
+plot(ppdacIII)
+
+dd <- melt(pdacI.II, measure.vars=columns)
+ppdacI.II <- ggplot(dd, aes(value, ..count.., fill=variable, color=variable)) + geom_density(alpha=.1) + labs(x=('Percentage'), title='Stage I and Stage II PDAC Samples')
+plot(ppdacI.II)
+```
+###### BTN + BT
+
+
+STAGE IV
+```{r stageIVbaseline, echo=FALSE}
+dd <- melt(subset(pdacIV, pdacIV$Baseline.Treatment.Naive == 1 & pdacIV$firstdraw == TRUE), measure.vars=columns)
+pdacIVbtn <- ggplot(dd, aes(value, ..count..,fill=variable, color=variable)) + geom_density(alpha=.1) + labs(x=('Percentage'), title='Stage IV PDAC BTN Samples')
+plot(pdacIVbtn)
+
+dd <- melt(subset(pdacIV, pdacIV$Baseline.Treatment.Naive == 0), measure.vars=columns)
+pdacIVbt <- ggplot(dd, aes(value, ..count..,fill=variable, color=variable)) + geom_density(alpha=.1) + labs(x=('Percentage'), title='Stage IV PDAC BT Samples')
+plot(pdacIVbt)
+```
+
+STAGE III
+```{r stageIIIbaseline, echo=FALSE}
+dd <- melt(subset(pdacIII, pdacIII$Baseline.Treatment.Naive == 1 & pdacIII$firstdraw == TRUE), measure.vars=columns)
+pdacIIIbtn <- ggplot(dd, aes(value, ..count..,fill=variable, color=variable)) + geom_density(alpha=.1) + labs(x=('Percentage'), title='Stage III PDAC BTN Samples')
+plot(pdacIIIbtn)
+
+dd <- melt(subset(pdacIII, pdacIII$Baseline.Treatment.Naive == 0), measure.vars=columns)
+pdacIIIbt <- ggplot(dd, aes(value, ..count..,fill=variable, color=variable)) + geom_density(alpha=.1) + labs(x=('Percentage'), title='Stage III PDAC BT Samples')
+plot(pdacIIIbt)
+```
+
+STAGE I and STAGE II
+```{r stageI.IIbaseline, echo=FALSE}
+dd <- melt(subset(pdacI.II, pdacI.II$Baseline.Treatment.Naive == 1 & pdacI.II$firstdraw == TRUE), measure.vars=columns)
+pdacI.IIbtn <- ggplot(dd, aes(value, ..count..,fill=variable, color=variable)) + geom_density(alpha=.1) + labs(x=('Percentage'), title='Stage I and Stage II PDAC BTN Samples')
+plot(pdacI.IIbtn)
+
+dd <- melt(subset(pdacIV, pdacIV$Baseline.Treatment.Naive == 0), measure.vars=columns)
+pdacI.IIbt <- ggplot(dd, aes(value, ..count..,fill=variable, color=variable)) + geom_density(alpha=.1) + labs(x=('Percentage'), title='Stage I and Stage II PDAC BT Samples')
+plot(pdacI.IIbt)
+```
+
+
+##### M0 v M1 for BTN
+Unfilled Lines are M0, filled lines are M1
+```{r M, echo=FALSE}
+ddM0 <- melt(subset(pdac, pdac$Baseline.Treatment.Naive == 1 & pdac$firstdraw == TRUE & grepl("M1", pdac$M)), measure.vars=columns)
+ddM1 <- melt(subset(pdac, pdac$Baseline.Treatment.Naive == 1 & pdac$firstdraw == TRUE & grepl("M0", pdac$M)), measure.vars=columns)
+pM0vM1 <- ggplot() + geom_density(alpha=.1, data=ddM1, aes(value,fill=variable, color=variable)) + geom_density(alpha=.1, data=ddM0, aes(value, color=variable)) + labs(x=('Percentage'), title='M0vM1 PDAC BTN Samples') + coord_cartesian(ylim=c(0, .2))
+plot(pM0vM1)
+```
+
+##### N0 v N1 for BTN
+Unfilled Lines are N0, filled lines are N1
+```{r M, echo=FALSE}
+ddN0 <- melt(subset(pdac, pdac$Baseline.Treatment.Naive == 1 & pdac$firstdraw == TRUE & grepl("N1", pdac$N)), measure.vars=columns)
+ddN1 <- melt(subset(pdac, pdac$Baseline.Treatment.Naive == 1 & pdac$firstdraw == TRUE & grepl("N0", pdac$N)), measure.vars=columns)
+pN0vN1 <- ggplot() + geom_density(alpha=.1, data=ddN1, aes(value,fill=variable, color=variable)) + geom_density(alpha=.1, data=ddN0, aes(value, color=variable)) + labs(x=('Percentage'), title='N0vN1 PDAC BTN Samples') + coord_cartesian(ylim=c(0, .2))
+plot(pN0vN1)
+```
+
+#### Pancreatic Cyst
+
+```{r panccyst, echo=FALSE}
+pcyst <- subset(pmdata, pmdata$Tumor.Type == 'Pancreatic Cyst')
+dd <- melt(pcyst, measure.vars=columns)
+ppcyst <- ggplot(dd, aes(value, ..count.., fill=variable, color=variable)) + geom_density(alpha=.1) + labs(x=('Percentage'), title='Pancreatic Cyst Samples')
+plot(ppcyst)
+```
+
+
+#### Healthy Controls
+```{r healthy, echo=FALSE}
+healthy <- subset(pmdata, pmdata$Tumor.Type == 'No tumor' | pmdata$Tumor.Type == 'Not Applicable')
+dd <- melt(healthy, measure.vars=columns)
+phealth <- ggplot(dd, aes(value, ..count.., fill=variable, color=variable)) + geom_density(alpha=.1) + labs(x=('Percentage'), title='Healthy Control Samples')
+plot(phealth)
+```
+
+## PCA
+
+PCA analysis to see if there are distinct groups within some stratifications.
+The primary groups to look at would be
+
+  * Tumor Types
+  * Clinical Stage
+  * Progression
+  * Vital Status
+  
+Variables to consider include the standard bins (minus >1000 due to issues with inf) in either a scaled concentration or a proportion and possibly total concentration 
+```{r pcasetup, echo=FALSE}
+library(stats)
+library(plyr)
+library(dplyr)
+library(ggbiplot)
+```
+
+### Compare Concentrations to tumor types
+
+```{r pcatt}

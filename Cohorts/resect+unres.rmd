@@ -251,29 +251,29 @@ res <- t(as.data.frame(univ_results, check.names = TRUE))
 stargazer(res, type = 'text', title='Univariate Cox Regression (PFS)')
 ```
 ```{r lacohortuniOS, echo=FALSE}
-vars <- c('exoDNA', 'exo5', 'exo1', 'exo', 'log2exo','total.DNA.yield.exo', 'exoDNA.mut.ng.ml', 'genomic.equivalents.exo', 'log2cf', 'cfDNA', 'cf1', 'cf', 'total.DNA.yield.cf', 'cfDNA.mut.ng.ml', 'genomic.equivalents.cf', 'exoorcf', 'exoandcf', 'Age', 'gender', 'logCA19', 'ecog', 'Regimen', 'SLD', 'CA19.300')
-univ_formulas <- sapply(vars, function(x) as.formula(paste('Surv(OS, vital.status)~', x)))
-univ_models <- lapply( univ_formulas, function(x){coxph(x, data = la)})
-univ_results <- lapply(univ_models,
-                       function(x){ 
-                          x <- summary(x)
-                          p.value<-signif(x$wald["pvalue"], digits=2)
-                          wald.test<-signif(x$wald["test"], digits=2)
-                          beta<-signif(x$coef[1], digits=2);#coeficient beta
-                          HR <-signif(x$coef[2], digits=2);#exp(beta)
-                          HR.confint.lower <- signif(x$conf.int[,"lower .95"], 2)
-                          HR.confint.upper <- signif(x$conf.int[,"upper .95"],2)
-                          HR <- paste0(HR, " (", 
-                                       HR.confint.lower, "-", HR.confint.upper, ")")
-                          res<-c(beta, HR, wald.test, p.value)
-                          names(res)<-c("beta", "HR (95% CI for HR)", "wald.test", 
-                                        "p.value")
-                          return(res)
-                          #return(exp(cbind(coef(x),confint(x))))
-                         })
-res <- t(as.data.frame(univ_results, check.names = TRUE))
+#vars <- c('exoDNA', 'exo5', 'exo1', 'exo', 'log2exo','total.DNA.yield.exo', 'exoDNA.mut.ng.ml', 'genomic.equivalents.exo', 'log2cf', 'cfDNA', 'cf1', 'cf', 'total.DNA.yield.cf', 'cfDNA.mut.ng.ml', 'genomic.equivalents.cf', 'exoorcf', 'exoandcf', 'Age', 'gender', 'logCA19', 'ecog', 'Regimen', 'SLD', 'CA19.300')
+#univ_formulas <- sapply(vars, function(x) as.formula(paste('Surv(OS, vital.status)~', x)))
+#univ_models <- lapply( univ_formulas, function(x){coxph(x, data = la)})
+#univ_results <- lapply(univ_models,
+#                      function(x){ 
+#                        x <- summary(x)
+#                         p.value<-signif(x$wald["pvalue"], digits=2)
+#                          wald.test<-signif(x$wald["test"], digits=2)
+#                          beta<-signif(x$coef[1], digits=2);#coeficient beta
+#                          HR <-signif(x$coef[2], digits=2);#exp(beta)
+#                          HR.confint.lower <- signif(x$conf.int[,"lower .95"], 2)
+#                          HR.confint.upper <- signif(x$conf.int[,"upper .95"],2)
+#                          HR <- paste0(HR, " (", 
+#                                       HR.confint.lower, "-", HR.confint.upper, ")")
+#                          res<-c(beta, HR, wald.test, p.value)
+#                          names(res)<-c("beta", "HR (95% CI for HR)", "wald.test", 
+#                                        "p.value")
+#                          return(res)
+#                          #return(exp(cbind(coef(x),confint(x))))
+#                         })
+#res <- t(as.data.frame(univ_results, check.names = TRUE))
 ## as.data.frame(res)
-stargazer(res, type = 'text', title='Univariate Cox Regression (OS)')
+#stargazer(res, type = 'text', title='Univariate Cox Regression (OS)')
 ```
 
 # Multivariate
@@ -397,7 +397,7 @@ exoDNA and cfDNA
 LA population is too small for multivariate analysis
 
 ```{r metmulti, echo=FALSE}
-covars <- c('gender', 'factor(ecog)', 'Regimen', 'factor(factorMet)', 'CA19.300')
+covars <- c('gender', 'factor(ecog)', 'factor(factorMet)', 'CA19.300', 'SLD')
 covars.col <- paste(covars, collapse="+")
 form <- as.formula(paste("Surv(PFS, Progression) ~ exo5+cf+",covars.col,sep=''))
 metpfs.cox <- coxph(form, data=met )
@@ -408,9 +408,10 @@ metpfs.cox <- coxph(form, data=met )
 # form <- as.formula(paste("Surv(PFS, Progression) ~ exoandcf+",covars.col,sep=''))
 # metpfsand.cox <- coxph(form, data=met )
 
-covars <- c('ecog', 'Regimen', 'factor(factorMet)', 'CA19.300')
+covars <- c('factor(ecog)', 'factor(factorMet)', 'CA19.300', 'SLD')
 covars.col <- paste(covars, collapse="+")
-metos.cox <- coxph(Surv(OS, vital.status) ~ exo5 + cf + SLD + factor(factorMet) + CA19.300 + gender + Regimen, data=met )
+form <- as.formula(paste("Surv(OS, vital.status) ~ exo5+cf+",covars.col,sep=''))
+metos.cox <- coxph(form, data=met )
 #metosexo.cox <- coxph(Surv(OS, vital.status) ~ exo5 + SLD + factor(factorMet) +CA19.300 +  gender + Regimen, data=met )
 #metoscf.cox <- coxph(Surv(OS, vital.status) ~ cf + SLD + factor(factorMet)  + CA19.300 + gender + Regimen, data=met )
 # metosor.cox <- coxph(Surv(OS, vital.status) ~ exoorcf + SLD + factor(factorMet)  + CA19.300 + gender + Regimen, data=met )
@@ -737,5 +738,6 @@ Metvexol <- ggplot(met, aes(x=Metastasis, y=exop1, color=Metastasis, shape=Metas
 #### exoDNA and cfDNA
 
 ```{r plotsCohorts, echo=FALSE}
-exostage <- ggplot(NULL)
+exostage <- ggplot(NULL, aes(y=exop1)) + geom_boxplot(data=met, alpha=.01, aes(x="Unresectable")) + geom_jitter(data=met, size=3, aes(x="Unresectable")) +geom_boxplot(data=resect, alpha=.01, aes(x="Resectable")) + geom_jitter(data=resect, size=3, aes(x="Resectable")) + scale_y_continuous(trans='log10')
+
 ```
