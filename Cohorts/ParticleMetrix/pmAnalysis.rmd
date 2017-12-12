@@ -1,0 +1,343 @@
+---
+title: "Particle Metrix Analysis"
+author: "Jonathan"
+date: "December 7, 2017"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Analysis Overview and setup
+
+This file is designed to compare median sizes of each sample in the Particle Metrix experiment. Goals to be met include basic demographic distributions of the patients, to stratifications to find significant distributions. Due to the analysis of bin distributions finding no seriously correlational differences in median and mean, this will be focused primarily on the total median size and possibly concentrations.
+
+
+```{r primarysetup, echo=FALSE}
+library(stats)
+library(ggplot2)
+library(plyr)
+library(dplyr)
+library(ggbiplot)
+library(survival)
+library(survminer)
+library(stargazer)
+pmdata = read.csv('pmData.csv', sep=',', na.strings = c('',' '))
+pmdata = subset(pmdata, OS < 2000)
+pmdata$logConc <- log10(pmdata$Exosome.Concentration)
+expdates = read.csv('rndexpdates.csv', sep=',')
+pmdata$firstdraw = grepl(".*-1$", pmdata$Draw.ID)
+pmdata <- merge(pmdata, expdates, by="Draw.ID", all.x=TRUE)
+
+## regex to replace any additional A's B's or c/p's in staging
+pmdata$Clinical.Stage <- gsub('I[AB]','I',pmdata$Clinical.Stage)
+pmdata$T <- gsub('[cp]','',pmdata$T)
+pmdata$N <- gsub('[cp]','',pmdata$N)
+pmdata$M <- gsub('[cp]','',pmdata$M)
+pmdata$vital.status <- gsub('Alive', 0, pmdata$vital.status)
+pmdata$vital.status <- gsub('Dead', 1, pmdata$vital.status)
+pmdata$vital.status <- gsub('Lost.*', 0, pmdata$vital.status)
+pmdata$vital.status <- as.numeric(pmdata$vital.status)
+
+pdacpm <- subset(pmdata, pmdata$Tumor.Type == 'PDAC' & pmdata$Biosource == 'Plasma')
+healthy <- subset(pmdata, pmdata$Tumor.Type == 'No tumor' | pmdata$Tumor.Type == 'Not Applicable')
+```
+
+```{r multiplot, echo=FALSE}
+# Multiple plot function
+#
+# ggplot objects can be passed in ..., or to plotlist (as a list of ggplot objects)
+# - cols:   Number of columns in layout
+# - layout: A matrix specifying the layout. If present, 'cols' is ignored.
+#
+# If the layout is something like matrix(c(1,2,3,3), nrow=2, byrow=TRUE),
+# then plot 1 will go in the upper left, 2 will go in the upper right, and
+# 3 will go all the way across the bottom.
+#
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+  library(grid)
+
+  # Make a list from the ... arguments and plotlist
+  plots <- c(list(...), plotlist)
+
+  numPlots = length(plots)
+
+  # If layout is NULL, then use 'cols' to determine layout
+  if (is.null(layout)) {
+    # Make the panel
+    # ncol: Number of columns of plots
+    # nrow: Number of rows needed, calculated from # of cols
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                    ncol = cols, nrow = ceiling(numPlots/cols))
+  }
+
+ if (numPlots==1) {
+    print(plots[[1]])
+
+  } else {
+    # Set up the page
+    grid.newpage()
+    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+
+    # Make each plot, in the correct location
+    for (i in 1:numPlots) {
+      # Get the i,j matrix positions of the regions that contain this subplot
+      matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+
+      print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                      layout.pos.col = matchidx$col))
+    }
+  }
+}
+```
+
+## Demographics
+
+To simply find demographic information, we remove all test-based fields (i.e size) and filter to only maintain unique rows.
+For proper data bounds, I've removed all patients with abnormally high OS and PFS (which are high due to missing data).
+
+```{r demographics, echo=FALSE}
+pmdemo = unique(subset(pdacpm, select=c('Patient.ID', 'Age', 'Gender', 'Baseline.Treatment.Naive','Clinical.Diagnosis','Clinical.Stage','T','N','M','OS','vital.status','PFS','Progression')))
+
+## ignore all patients with OS/PFS greater than 2000
+
+pmdemo <- subset(pmdemo, OS<2000 & PFS<2000)
+median(pmdemo$Age, na.rm = TRUE)
+range(pmdemo$Age, na.rm=TRUE)
+colheads <- c('Gender','Baseline.Treatment.Naive', 'Clinical.Stage', 'Clinical.Diagnosis','T','N','M','vital.status','Progression')
+demooccur <- lapply(colheads, function(x){count(pmdemo, x)})
+stargazer(demooccur, type='text', summary=rep(FALSE,length(demooccur)))
+```
+
+## Batch effects
+
+Test for batch effects. Several pseudo-random time points were taken and all samples were selected from those points. Distribution is plotted alongside a PCA 
+
+```{r batch, echo=FALSE}
+batch <- subset(pmdata, !is.na(Exp.Date))
+b1 <- ggplot(batch, aes(x=Exp.Date, y=Median.Size, color=Exp.Date), group=1) + geom_boxplot(alpha=.01) + geom_jitter()
+
+batch2 <- subset(batch, !is.na(logConc), select = c('logConc', 'Median.Size', 'Exp.Date'))
+batchgroup <- batch2[, 3]
+batch.pca <- prcomp(batch2[, 1:2], center=TRUE, scale.=TRUE)
+g <- ggbiplot(batch.pca, obs.scale = 1, var.scale = 1, 
+              groups = batchgroup, ellipse = TRUE, 
+              circle = TRUE) + scale_color_discrete(name = '') + theme(legend.direction = 'horizontal', 
+               legend.position = 'top')
+plot(b1)
+plot(g)
+```
+
+
+There does not seem to be a noticeable batch effect based on the Exosome concentration and the Median size. 
+
+
+## Median Size Distributions
+
+This will look at several different ways of trying to map out the distributions. First will be to see how med. size compares in different stratifications (e.g. Baseline treatment naive or staging). Combinations of the two are possible as well (e.g. stage IV and btn)
+
+```{r medsizesetup, echo=FALSE}
+pmbtn <- subset(pdacpm, Baseline.Treatment.Naive==1 & firstdraw == TRUE)
+pmbt <-subset(pdacpm, Baseline.Treatment.Naive==0 | (Baseline.Treatment.Naive==1 & firstdraw == FALSE))
+```
+
+### Single Variable Comparisons
+
+BTN v BT, or Progression v No progression, staging etc.
+*Note: When evaluating the Baseline Treated, I included draws from patients with btn draws (but on therapy)
+These binary analysis do not take into account any longitudinal effects
+
+```{r medsizebox, echo=FALSE}
+## Baseline
+p1 <- ggplot() + geom_boxplot(data=pmbtn, aes(x='Treatment Naive', y=Median.Size), alpha=.01) + geom_jitter(data=pmbtn, aes(x='Treatment Naive', y=Median.Size)) + geom_boxplot(data=pmbt, aes(x='Treated', y=Median.Size), alpha=.01) + geom_jitter(data=pmbt, aes(x='Treated', y=Median.Size)) + labs(title="Treatment Naive v Treated Median Size Distribution", y="Median Size (nm)", x="")
+
+p2 <- ggplot() + geom_boxplot(data=pmbtn, aes(x='Treatment Naive', y=logConc), alpha=.01) + geom_jitter(data=pmbtn, aes(x='Treatment Naive', y=logConc)) + geom_boxplot(data=pmbt, aes(x='Treated', y=logConc), alpha=.01) + geom_jitter(data=pmbt, aes(x='Treated', y=logConc)) + labs(title="Treatment Naive v Treated Exosome Concentration Distribution", y="Exosome Concentration log10(/ml)", x="")
+
+## Clinical Stage
+p3 <- ggplot(pdacpm, aes(x=Clinical.Stage, y=Median.Size, color=Clinical.Stage)) + geom_boxplot(alpha=.01) + geom_jitter() + labs(x="Clinical Stage", y="Median Size (nm)", title="Clinical Stage vs Median Size Distribution")
+
+p4 <- ggplot(pdacpm, aes(x=Clinical.Stage, y=Exosome.Concentration, color=Clinical.Stage)) + geom_boxplot(alpha=.01) + geom_jitter() + labs(x="Clinical Stage", y="Exosome Concentration log(/ml)", title="Clinical Stage vs Median Size Distribution")  + scale_y_log10() + annotation_logticks(base=10, sides="lr", scaled=TRUE)
+
+## T  N  M
+p9 <- ggplot(subset(pdacpm, !is.na(T)), aes(x=T, y=Median.Size, color=T)) + geom_boxplot(alpha=.01) + geom_jitter() + labs(x="T", y="Median Size (nm)", title="T vs Median Size Distribution")
+
+p10 <- ggplot(subset(pdacpm, !is.na(T)), aes(x=T, y=Exosome.Concentration, color=T)) + geom_boxplot(alpha=.01) + geom_jitter() + labs(x="T", y="Exosome Concentration log(/ml)", title="T vs Exosome Concentration Distribution") + scale_y_log10() + annotation_logticks(base=10, sides="lr", scaled=TRUE)
+
+p11 <- ggplot(subset(pdacpm, !is.na(N)), aes(x=N, y=Median.Size, color=N)) + geom_boxplot(alpha=.01) + geom_jitter() + labs(x="Clinical Stage", y="Median Size (nm)", title="T vs Median Size Distribution")
+
+p12 <- ggplot(subset(pdacpm, !is.na(N)), aes(x=N, y=Exosome.Concentration, color=N)) + geom_boxplot(alpha=.01) + geom_jitter() + labs(x="N", y="Exosome Concentration log(/ml)", title="N vs Exosome Concentration Distribution") + scale_y_log10() + annotation_logticks(base=10, sides="lr", scaled=TRUE)
+
+p13 <- ggplot(subset(pdacpm, !is.na(M)), aes(x=M, y=Median.Size, color=M)) + geom_boxplot(alpha=.01) + geom_jitter() + labs(x="M", y="Median Size (nm)", title="M vs Median Size Distribution")
+
+p14 <- ggplot(subset(pdacpm, !is.na(M)), aes(x=M, y=Exosome.Concentration, color=M)) + geom_boxplot(alpha=.01) + geom_jitter() + labs(x="M", y="Exosome Concentration log(/ml)", title="M vs Exosome Concentration Distribution") + scale_y_log10() + annotation_logticks(base=10, sides="lr", scaled=TRUE)
+
+## Progression
+p5 <- ggplot(pdacpm, aes(x=factor(Progression), y=Median.Size, color=factor(Progression))) + geom_boxplot(alpha=.01) + geom_jitter() + labs(x="Progression", y="Median Size (nm)", title="Progression v Median Size Distribution") 
+
+p6 <- ggplot(pdacpm, aes(x=factor(Progression), y=Exosome.Concentration, color=factor(Progression))) + geom_boxplot(alpha=.01) + geom_jitter() + labs(x="Progression", y="Median Size (nm)", title="Progression v Exosome concentration Distribution") + scale_y_log10() + annotation_logticks(base=10, sides="lr", scaled=TRUE)
+
+## Gender
+p7 <- ggplot(pdacpm, aes(x=Gender, y=Median.Size, color=Gender)) + geom_boxplot(alpha=.01) + geom_jitter() + labs(y="Median Size (nm)", title="Gender v Median Size Distribution")
+
+p8 <- ggplot(pdacpm, aes(x=Gender, y=Exosome.Concentration, color=Gender)) + geom_boxplot(alpha=.01) + geom_jitter() + labs(y="Exosome Concentration log(/ml)", title="Gender v Exosome Concentration Distribution") + scale_y_log10() + annotation_logticks(base=10, sides="lr", scaled=TRUE)
+
+## Age v Conc + Median
+p16 <- ggplot(pdacpm, aes(x=Age, y=Median.Size)) + geom_point() + stat_smooth(method='glm')
+p17 <- ggplot(pdacpm, aes(x=Age, y=Exosome.Concentration)) + geom_point() + stat_smooth(method='glm') + scale_y_log10() + annotation_logticks(base=10, sides="lr", scaled=TRUE)
+
+```
+
+#### Treatment Status
+
+```{r tstat, echo=FALSE}
+multiplot(p1, p2, cols=2)
+```
+
+#### Clinical Staging
+
+```{r clinstage, echo=FALSE}
+## multiplot(p3,p4, cols=2)
+## multiplot(p9, p10, p11, p12, p13, p14, cols=3)
+plot(p3)
+plot(p4)
+plot(p9)
+plot(p10)
+plot(p11)
+plot(p12)
+plot(p13)
+plot(p14)
+
+```
+
+#### Progression
+
+```{r prog, echo=FALSE}
+##multiplot(p5, p6, cols=2)
+plot(p5)
+plot(p6)
+```
+
+#### Gender
+```{r sex, echo=FALSE}
+## multiplot(p7,p8, cols=2)
+plot(p7)
+plot(p8)
+```
+
+#### Age
+
+```{r age, echo=FALSE}
+plot(p16)
+plot(p17)
+```
+
+### Mulitple variables
+
+Start looking at comparison between multiple variables. Idea here is to see if there is a general trend between multiple variables. The most important comparisons are the baseline treatment naives vs treated and looking for trends within baseline treatment naives.
+
+```{r multsetup, echo=FALSE}
+## pmbtn and pmbt are primary tables
+```
+
+
+#### Compare within baseline treatment naives
+```{r btn, echo=FALSE}
+## Clincal Staging
+b1 <- ggplot(pmbtn, aes(x=Clinical.Stage, y=Median.Size, color=Clinical.Stage)) + geom_boxplot(alpha=0.01) + geom_jitter() + labs(title="Median Size v Clinical Stage in BTN Samples")
+b2 <- ggplot(pmbtn, aes(x=Clinical.Stage, y=Exosome.Concentration, color=Clinical.Stage)) + geom_boxplot(alpha=0.01) + geom_jitter() + labs(title="Exosome Concentration v Clinical Stage in BTN Samples") +  scale_y_log10() + annotation_logticks(base=10, sides="lr", scaled=TRUE)
+b3 <- ggplot(subset(pmbtn, !is.na(T)), aes(x=T, y=Median.Size, color=T)) + geom_boxplot(alpha=0.01) + geom_jitter() + labs(title="Median Size v T in BTN Samples")
+b4 <- ggplot(subset(pmbtn, !is.na(T)), aes(x=T, y=Exosome.Concentration, color=T)) + geom_boxplot(alpha=0.01) + geom_jitter() + labs(title="Exosome Concentration v T in BTN Samples") +  scale_y_log10() + annotation_logticks(base=10, sides="lr", scaled=TRUE)
+b5 <- ggplot(subset(pmbtn, !is.na(N)), aes(x=N, y=Median.Size, color=N)) + geom_boxplot(alpha=0.01) + geom_jitter() + labs(title="Median Size v N in BTN Samples")
+b6 <- ggplot(subset(pmbtn, !is.na(N)), aes(x=N, y=Exosome.Concentration, color=N)) + geom_boxplot(alpha=0.01) + geom_jitter() + labs(title="Exosome Concentration v N in BTN Samples") +  scale_y_log10() + annotation_logticks(base=10, sides="lr", scaled=TRUE)
+b7 <- ggplot(subset(pmbtn, !is.na(M)), aes(x=M, y=Median.Size, color=M)) + geom_boxplot(alpha=0.01) + geom_jitter() + labs(title="Median Size v M in BTN Samples")
+b8 <- ggplot(subset(pmbtn, !is.na(M)), aes(x=M, y=Exosome.Concentration, color=M)) + geom_boxplot(alpha=0.01) + geom_jitter() + labs(title="Exosome Concentration v M in BTN Samples") +  scale_y_log10() + annotation_logticks(base=10, sides="lr", scaled=TRUE)
+
+plot(b1)
+plot(b2)
+plot(b3)
+plot(b4)
+plot(b5)
+plot(b6)
+plot(b7)
+plot(b8)
+```
+
+## Cox Proportional Hazards Model and Regressions
+
+```{r coxsetup, echo=FALSE}
+vars <- c('Median.Size', 'logConc', 'Age', 'Gender', 'Clinical.Stage', 'T', 'N', 'M')
+
+
+```
+
+### Univariate
+
+
+#### PFS
+
+```{r univpfs, echo=FALSE}
+univ_formulas <- sapply(vars, function(x) as.formula(paste('Surv(PFS, Progression)~', x)))
+univ_models <- lapply( univ_formulas, function(x){coxph(x, data = pmbtn)})
+stargazer(univ_models, type = 'text', title='Univariate Cox Regression (PFS)')
+```
+
+```{r s4univpfs, echo=FALSE}
+vars <- c('Median.Size', 'logConc', 'Age', 'Gender', 'T', 'N', 'M')
+univ_formulas <- sapply(vars, function(x) as.formula(paste('Surv(PFS, Progression)~', x)))
+univ_models <- lapply( univ_formulas, function(x){coxph(x, data = subset(pmbtn, Clinical.Stage == 'Stage IV'))})
+stargazer(univ_models, type = 'text', title='Univariate Cox Regression Stage IV (PFS)')
+```
+
+#### OS
+
+```{r univos, echo=FALSE}
+vars <- c('Median.Size', 'logConc', 'Age', 'Gender', 'Clinical.Stage', 'T', 'N', 'M')
+univ_formulas <- sapply(vars, function(x) as.formula(paste('Surv(OS, vital.status)~', x)))
+univ_models <- lapply( univ_formulas, function(x){coxph(x, data = pmbtn)})
+stargazer(univ_models, type = 'text', title='Univariate Cox Regression (OS)')
+```
+
+```{r s4univos, echo=FALSE}
+vars <- c('Median.Size', 'logConc', 'Age', 'Gender', 'T', 'N', 'M')
+univ_formulas <- sapply(vars, function(x) as.formula(paste('Surv(OS, vital.status)~', x)))
+univ_models <- lapply( univ_formulas, function(x){coxph(x, data = subset(pmbtn, Clinical.Stage == 'Stage IV'))})
+stargazer(univ_models, type = 'text', title='Univariate Cox Regression (OS)')
+```
+
+
+## Patients with longitudinal follow ups
+
+```{r longsetup, echo=FALSE}
+tempsub <- subset(pdacpm, pdacpm$Baseline.Treatment.Naive == 1)
+rawpats <- as.data.frame(count(tempsub, 'Patient.ID'))
+pats <- subset(rawpats, freq > 2)
+df <- merge(tempsub, pats, by='Patient.ID')
+
+longFrames <- function(x){
+  ## x is dataframe
+  patlist <- unique(x$Patient.ID)
+  ## patgroups <- lapply(patlist, function(y){x[x$Patient.ID == y,]})
+  patgroups <- lapply(patlist, function(y){subset(x, Patient.ID == y)})
+  return(patgroups)
+}
+
+plotLong <- function(n){
+  ## x is dataframe/list of dataframes
+  cols <- c("Median Size"='#e41a1c', "0-40"='#377eb8',"40-150"='#4daf4a', "150-1000"='#984ea3')
+  ps <- lapply(n, function(x){
+    ggplot(x, aes(x=Draw.ID, y=Median.Size,  color="Median Size")) + 
+      geom_point(group=1) + geom_line(group=1) + 
+      geom_point(aes(x=Draw.ID, y=X0.40., color="0-40"), group=2) + geom_line(aes(x=Draw.ID, y=X0.40., color="0-40"),group=2) +
+      geom_point(aes(x=Draw.ID, y=X40.150., color="40-150"), group=3) + geom_line(aes(x=Draw.ID, y=X40.150., color="40-150"),group=3) +
+      geom_point(aes(x=Draw.ID, y=X150.1000., color="150-1000"), group=4) + geom_line(aes(x=Draw.ID, y=X150.1000., color="150-1000"),group=4) +
+      labs(x="Draw ID", y="Median Size (nm) or Exosome Size Composition (%)")
+  })
+  sapply(ps, function(x){plot(x)})
+}
+```
+
+
+
