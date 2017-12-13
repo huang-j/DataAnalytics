@@ -1,0 +1,252 @@
+---
+title: "CTC Analysis"
+author: "Jonathan Huang"
+date: "12/12/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Analysis of CTC
+
+This document covers the analysis of our CTC's.
+
+## Setup
+
+CTCS are organized in a table format where one column corresponds to a single biomarker in that cell.
+E.g.
+
+```{r ctcsetup, echo=FALSE}
+library(stats)
+library(data.table)
+library(plyr)
+library(dplyr)
+library(survival)
+library(survminer)
+library(ggplot2)
+library(ggpubr)
+library(stargazer)
+CTCdt <- fread('CTCcelllist.csv')
+stargazer(head(CTCdt), type="text", summary=rep(FALSE, length(head(CTCdt))))
+CTCdemo <- fread('CTCdemo.csv')
+setkey(CTCdemo, Patient.ID)
+CTCdemo <- unique(CTCdemo)
+CTCdemo[,c('T','N','M','Stage') := .(gsub('[cp]','',T),
+                                     gsub('[cp]','',N),
+                                     gsub('[cp]','',M),
+                                     gsub('[AB]','',Stage)
+                                     )
+        ]
+CTCCA19 <- fread('CTCCA19.csv')
+CTCCA19[,CA19 := as.numeric(CA19)]
+sampledates <- fread('CTCsamples.csv')
+```
+These will be organized based on Cell.ID with Biomarkers as a list.
+
+```{r ctcsetup2, echo=FALSE, warning=FALSE}
+groupup = function(x){
+  list(x)
+}
+EM = function(x){
+  output = ''
+  if(is.element(1, x) || is.element(4, x)){
+    if(is.element(3, x)){
+      return('SC')
+    } else {
+      output = paste(output,'E', sep="")
+    }
+
+  }
+  if(is.element(2, x)){
+    output = paste(output,'M', sep="")
+  }
+  return(output)
+}
+Epc = function(x){
+  output=''
+  if(is.element(2, x)){
+    output= paste(output,'m',sep="")
+  }
+  if(is.element(1, x)){
+    output = paste(output,'p',sep="")
+  }
+  if(is.element(4, x)){
+    output = paste(output,'c',sep='')
+  }
+  return(output)
+}
+CTCdt <- CTCdt[,.(Biomarkers = list(Biomarker)), by=.(Cell.ID, Draw.ID, Patient.ID)]
+DT <- CTCdt[, .(Patient.ID, Draw.ID, Cell.ID,Biomarkers, cellType = lapply(Biomarkers, function(x){EM(x)}), epType = lapply(Biomarkers, function(x){Epc(x)}))]
+DT[, c('cellType', 'epType') := .(paste(cellType, sep=""),paste(epType, sep=""))]
+mDT <- melt(DT[,.N,by=.(Patient.ID,Draw.ID,cellType)])
+mDT <- dcast(mDT, Patient.ID + Draw.ID ~ cellType)
+mDT[is.na(E), E := 0]
+mDT[is.na(EM), EM := 0]
+mDT[is.na(M), M := 0]
+mDT[is.na(SC), SC := 0]
+mDT <- sampledates[mDT, on='Draw.ID']
+mDT2 <- melt(DT[,.N,by=.(Patient.ID,Draw.ID,epType)])
+mDT2 <- dcast(mDT2, Patient.ID + Draw.ID ~ epType)
+mDT2 <- mDT2[,.(Draw.ID,p,c,pc,m,mp,mc,mpc)]
+mDT2[is.na(p), p := 0]
+mDT2[is.na(c), c := 0]
+mDT2[is.na(pc), pc := 0]
+mDT2[is.na(m), m := 0]
+mDT2[is.na(mp), mp := 0]
+mDT2[is.na(mc), mc := 0]
+mDT2[is.na(mpc), mpc := 0]
+DT2 <- mDT[CTCdemo, on='Patient.ID']
+DT2 <- mDT2[DT2, on='Draw.ID']
+DT3 <- CTCCA19[DT2, on=.(Patient.ID,draw_date), roll=TRUE]
+```
+
+## Demographics
+
+```{r demo, echo=FALSE}
+colheads <- c('Gender','Stage','T','N','M')
+demooccur <- lapply(colheads, function(x){
+  CTCdemo[,.N,by=x]
+})
+stargazer(demooccur, type='text',summary=rep(FALSE, length(demooccur)))
+```
+
+## Compare CTC counts in Baseline Treatment Naive patient groups
+
+```{r counts, echo=FALSE, warning=FALSE}
+BTNDT <- DT3[grepl('.*-1$', Draw.ID) & BTN == 1]
+stargazer(BTNDT[,.(E,EM,M)], type='text', title='Distribution')
+p <- ggplot(BTNDT) + geom_boxplot(aes(x='Epithelial', y=E), group=1) + geom_jitter(aes(x='Epithelial', y=E), group=1) + 
+                     geom_boxplot(aes(x='Transition', y=EM), group=2) + geom_jitter(aes(x='Transition', y=EM), group=2) +
+                     geom_boxplot(aes(x='Mesenchymal', y=M), group=3) + geom_jitter(aes(x='Mesenchymal', y=M),group=3) +
+    labs(title="General Distribution between Epithelial and Mesenchymal Cells in Baseline Treatment Naive Samples", y='Number of Cells', x='')
+
+plot(p)
+
+
+```
+
+### Counts
+
+```{r counts2, echo=FALSE, warning=FALSE}
+colheads <- c('Gender','Stage','T','N','i.M')
+btnoccur <- lapply(colheads, function(x){
+  BTNDT[,.(.N, sumE = sum(E), sumEM = sum(EM), sumM = sum(M), total = sum(E+M+EM)), by=x]
+})
+stargazer(btnoccur, type='text',summary=rep(FALSE, length(btnoccur)))
+```
+
+### Distributions
+```{r distr, echo=FALSE, warning=FALSE}
+colheads <- c('Gender','Stage','T','N','i.M')
+j <- c('E','EM','M','Gender','Stage','Tumor.Type','T','N','i.M')
+plotdistri <- function(x,y,m){
+  temp <- melt(x[,m, with=FALSE])
+  sapply(y, function(n){
+          p <-ggplot(temp, aes(x=variable)) +
+            geom_jitter(aes_string(y='value',color=n),position = position_jitter(width = .4), group=1) + geom_boxplot(aes_string(y='value',color=n),alpha=.01, group=1) +
+            geom_jitter(aes_string(y='value',color=n),position = position_jitter(width = .4), group=2) + geom_boxplot(aes_string(y='value',color=n),alpha=.01, group=2) +
+            geom_jitter(aes_string(y='value',color=n),position = position_jitter(width = .4),group=3) + geom_boxplot(aes_string(y='value',color=n),alpha=.01, group=3)
+      plot(p)
+  })
+}
+plotdistri(BTNDT, colheads,j)
+```
+
+#### EMT breakdowns
+
+```{r distrb, echo=FALSE, message=FALSE, warning=FALSE}
+jb <- c('p','c','pc','mp','mc','mpc','Gender','Stage','Tumor.Type','T','N','i.M')
+plotdistri(BTNDT,colheads,jb)
+```
+### Percent Distributions
+
+```{r percentdistr, echo=FALSE, message=FALSE, warning=FALSE}
+
+emtper <- BTNDT[, .(Patient.ID,E = E /(E + EM + M), EM = EM/(E+EM+M), M = M/(E+EM+M), Gender, Stage,T,N,i.M, Tumor.Type,vital.status,OS,Progression,PFS)]
+plotdistri(emtper, colheads, j)
+
+```
+
+## Longitudinal Observations
+
+```{r longsetup, echo=FALSE, message=FALSE, warning=FALSE}
+# Multiple plot function
+#
+# ggplot objects can be passed in ..., or to plotlist (as a list of ggplot objects)
+# - cols:   Number of columns in layout
+# - layout: A matrix specifying the layout. If present, 'cols' is ignored.
+#
+# If the layout is something like matrix(c(1,2,3,3), nrow=2, byrow=TRUE),
+# then plot 1 will go in the upper left, 2 will go in the upper right, and
+# 3 will go all the way across the bottom.
+#
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+  library(grid)
+
+  # Make a list from the ... arguments and plotlist
+  plots <- c(list(...), plotlist)
+
+  numPlots = length(plots)
+
+  # If layout is NULL, then use 'cols' to determine layout
+  if (is.null(layout)) {
+    # Make the panel
+    # ncol: Number of columns of plots
+    # nrow: Number of rows needed, calculated from # of cols
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                    ncol = cols, nrow = ceiling(numPlots/cols))
+  }
+
+ if (numPlots==1) {
+    print(plots[[1]])
+
+  } else {
+    # Set up the page
+    grid.newpage()
+    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+
+    # Make each plot, in the correct location
+    for (i in 1:numPlots) {
+      # Get the i,j matrix positions of the regions that contain this subplot
+      matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+
+      print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                      layout.pos.col = matchidx$col))
+    }
+  }
+}
+
+longFrames <- function(x){
+  ## x is datatable
+  setkey(x, Patient.ID)
+  patlist <- unique(x[,Patient.ID])
+  ## patgroups <- lapply(patlist, function(y){x[x$Patient.ID == y,]})
+  patgroups <- lapply(patlist, function(y){ x[Patient.ID == y] })
+  return(patgroups)
+}
+
+plotLong <- function(n){
+  ## x is datatable/list of datatable
+  cols <- c("Epithelial"='#e41a1c', "EMT"='#377eb8',"Mesenchymal"='#4daf4a', "CA19"='#984ea3', "test2" = "#ff7f00")
+  ps <- lapply(n, function(x){
+    ggplot(x, aes(x=Draw.ID, y=E,  color="Epithelial")) + 
+      geom_point(group=1) + geom_line(group=1) + 
+      geom_point(aes(x=Draw.ID, y=EM, color="EMT"), group=2) + geom_line(aes(x=Draw.ID, y=EM, color="EMT"),group=2) +
+      geom_point(aes(x=Draw.ID, y=M, color="Mesenchymal"), group=3) + geom_line(aes(x=Draw.ID, y=M, color="Mesenchymal"),group=3) +
+      labs(x="Draw ID", y="") + theme(legend.position = 'bottom')
+  })
+  ca19 <- lapply(n, function(x){
+    ggplot(x, aes(x=Draw.ID, y=CA19, color="CA19")) +
+      geom_point(group=1) + geom_line(group=1) +
+      labs(x="Draw ID", y="CA19-9") + theme(legend.position = 'bottom')
+  })
+  mapply(function(x,y){multiplot(x,y,cols=2)},ps,ca19)
+}
+```
+
+```{r longplot, echo=FALSE, message=FALSE, warning=FALSE}
+groups <- longFrames(DT3)
+plotLong(groups)
+```
