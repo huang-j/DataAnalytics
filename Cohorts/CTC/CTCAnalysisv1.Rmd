@@ -28,7 +28,8 @@ library(survminer)
 library(ggplot2)
 library(ggpubr)
 library(stargazer)
-CTCdt <- fread('CTCcelllist.csv')
+CTCdt <- fread('CTCcelllistFull.csv')
+drawlist <- CTCdt[,.N,by=Draw.ID]
 stargazer(head(CTCdt), type="text", summary=rep(FALSE, length(head(CTCdt))))
 CTCdemo <- fread('CTCdemo.csv')
 setkey(CTCdemo, Patient.ID)
@@ -41,14 +42,30 @@ CTCdemo[,c('T','N','M','Stage') := .(gsub('[cp]','',T),
         ]
 CTCCA19 <- fread('CTCCA19.csv')
 CTCCA19[,CA19 := as.numeric(CA19)]
+setkey(CTCCA19, Patient.ID)
+CTCCA19 <- unique(CTCCA19)
+CTCCA19[, CA19_date := as.Date(draw_date)]
 sampledates <- fread('CTCsamples.csv')
+setkey(sampledates, Draw.ID)
+sampledates <- unique(sampledates)
+imagedates <- fread('ctcrecist.csv')
+imagedates[, image_date := as.Date(draw_date)]
+therapy <- fread('CTCTherapies.csv')
+therapy[, c('start', 'end') := .(as.Date(start), as.Date(end))]
+setkeyv(therapy, c("Patient.ID","start"))
+tstart <- therapy[, .SD[1], by=.(Patient.ID,line)]
+tstart <- tstart[, .(Patient.ID,line,start)]
+tstartdates <- tstart[!is.na(start), .SD[1], by=Patient.ID]
+setnames(tstartdates, old='start', new='t.start')
+tstartdates <- tstartdates[, .(Patient.ID,t.start)]
+tend <- therapy[, .SD[.N], by=.(Patient.ID,line)]
+tend <- tend[, .(Patient.ID,line,end)]
+therapy <- tstart[tend, on=.(Patient.ID,line)]
+therapy[, draw_date := as.Date(start)]
 ```
 These will be organized based on Cell.ID with Biomarkers as a list.
 
 ```{r ctcsetup2, echo=FALSE, warning=FALSE}
-groupup = function(x){
-  list(x)
-}
 EM = function(x){
   output = ''
   if(is.element(1, x) || is.element(4, x)){
@@ -77,30 +94,42 @@ Epc = function(x){
   }
   return(output)
 }
-CTCdt <- CTCdt[,.(Biomarkers = list(Biomarker)), by=.(Cell.ID, Draw.ID, Patient.ID)]
-DT <- CTCdt[, .(Patient.ID, Draw.ID, Cell.ID,Biomarkers, cellType = lapply(Biomarkers, function(x){EM(x)}), epType = lapply(Biomarkers, function(x){Epc(x)}))]
+CTCdt2 <- CTCdt[,.(isCTC, Biomarkers = list(Biomarker)), by=.(Cell.ID, isCTC,Draw.ID, Patient.ID)]
+DT <- CTCdt2[isCTC==1,.(Patient.ID, Draw.ID, Cell.ID, isCTC, Biomarkers, cellType = lapply(Biomarkers, function(x){EM(x)}), epType = lapply(Biomarkers, function(x){Epc(x)}))]
 DT[, c('cellType', 'epType') := .(paste(cellType, sep=""),paste(epType, sep=""))]
-mDT <- melt(DT[,.N,by=.(Patient.ID,Draw.ID,cellType)])
-mDT <- dcast(mDT, Patient.ID + Draw.ID ~ cellType)
-mDT[is.na(E), E := 0]
-mDT[is.na(EM), EM := 0]
-mDT[is.na(M), M := 0]
-mDT[is.na(SC), SC := 0]
+mDT <- melt(DT[,.N,by=.(Patient.ID,Draw.ID,isCTC,cellType)], id=c('Patient.ID', 'Draw.ID','isCTC','cellType'))
+temp <- mDT
+mDT <- dcast(mDT, Patient.ID + Draw.ID + isCTC ~ cellType)
+temp2 <- mDT
+## add draws with no CTCs as 0's
+adding <- merge(drawlist, mDT, by='Draw.ID', all=TRUE)
+adding[is.na(Patient.ID), Patient.ID := gsub('-.*','',Draw.ID)]
+adding[is.na(isCTC), isCTC:=1]
+mDT <- adding[(Draw.ID != '' & !grepl('.*-[T].*',Draw.ID))]
 mDT <- sampledates[mDT, on='Draw.ID']
-mDT2 <- melt(DT[,.N,by=.(Patient.ID,Draw.ID,epType)])
-mDT2 <- dcast(mDT2, Patient.ID + Draw.ID ~ epType)
-mDT2 <- mDT2[,.(Draw.ID,p,c,pc,m,mp,mc,mpc)]
-mDT2[is.na(p), p := 0]
-mDT2[is.na(c), c := 0]
-mDT2[is.na(pc), pc := 0]
-mDT2[is.na(m), m := 0]
-mDT2[is.na(mp), mp := 0]
-mDT2[is.na(mc), mc := 0]
-mDT2[is.na(mpc), mpc := 0]
+mDT2 <- melt(DT[,.N,by=.(Patient.ID,Draw.ID,isCTC,epType)], id=c('Patient.ID', 'Draw.ID','isCTC','epType'))
+mDT2 <- dcast(mDT2, Patient.ID + Draw.ID + isCTC ~ epType)
+mDT2 <- mDT2[,.(Draw.ID,isCTC,p,c,pc,m,mp,mc,mpc)]
 DT2 <- mDT[CTCdemo, on='Patient.ID']
-DT2 <- mDT2[DT2, on='Draw.ID']
-DT3 <- CTCCA19[DT2, on=.(Patient.ID,draw_date), roll=TRUE]
+DT2 <- mDT2[DT2, on=c('Draw.ID','isCTC')]
+DT3 <- CTCCA19[DT2, on=.(Patient.ID,draw_date), roll=-Inf]
+DT3[,c('E','EM','M','SC','p','c','pc','m','mp','mc','mpc')][is.na(DT3[,c('E','EM','M','SC','p','c','pc','m','mp','mc','mpc')])] <- 0
+DT4 <- imagedates[DT3, on=.(Patient.ID,draw_date), roll=-Inf]
+DT4[,draw_date := as.Date(draw_date)]
+setkey(DT4, Draw.ID)
+DT4 <- unique(DT4)
+# removed M as we cant be positive that they are CTCs
+DT4[, totCTC := sum(E + EM + SC), by=Draw.ID]
+
+# set up proportions
+DT4[, c('perE', 'perEM', 'perSC') := .(E/totCTC*100, EM/totCTC*100, SC/totCTC*100), by=Draw.ID]
+
+# therapies added
+DTT <- tstartdates[DT4, on=.(Patient.ID)]
+DTT <- therapy[DTT, on=.(Patient.ID, draw_date), roll=TRUE]
+DTT[, c("days.first", "days.start") := .(draw_date - t.start, draw_date - start)]
 ```
+
 
 ## Demographics
 
@@ -115,9 +144,10 @@ stargazer(demooccur, type='text',summary=rep(FALSE, length(demooccur)))
 ## Compare CTC counts in Baseline Treatment Naive patient groups
 
 ```{r counts, echo=FALSE, warning=FALSE}
-BTNDT <- DT3[grepl('.*-1$', Draw.ID) & BTN == 1]
-stargazer(BTNDT[,.(E,EM,M)], type='text', title='Distribution')
-p <- ggplot(BTNDT) + geom_boxplot(aes(x='Epithelial', y=E), group=1) + geom_jitter(aes(x='Epithelial', y=E), group=1) + 
+BTNDT <- DT4[grepl('.*-1$', Draw.ID) & BTN == 1]
+stargazer(BTNDT[isCTC==1,.(E,EM,M)], type='text', title='Distribution of CTC cells')
+## stargazer(BTNDT[isCTC==0,.(E,EM,M)], type='text', title='Distribution of Normal cells')
+p <- ggplot(BTNDT[isCTC==1]) + geom_boxplot(aes(x='Epithelial', y=E), group=1) + geom_jitter(aes(x='Epithelial', y=E), group=1) + 
                      geom_boxplot(aes(x='Transition', y=EM), group=2) + geom_jitter(aes(x='Transition', y=EM), group=2) +
                      geom_boxplot(aes(x='Mesenchymal', y=M), group=3) + geom_jitter(aes(x='Mesenchymal', y=M),group=3) +
     labs(title="General Distribution between Epithelial and Mesenchymal Cells in Baseline Treatment Naive Samples", y='Number of Cells', x='')
@@ -130,7 +160,7 @@ plot(p)
 ### Counts
 
 ```{r counts2, echo=FALSE, warning=FALSE}
-colheads <- c('Gender','Stage','T','N','i.M')
+colheads <- c('Gender','Stage','T','i.N','i.M')
 btnoccur <- lapply(colheads, function(x){
   BTNDT[,.(.N, sumE = sum(E), sumEM = sum(EM), sumM = sum(M), total = sum(E+M+EM)), by=x]
 })
@@ -139,15 +169,16 @@ stargazer(btnoccur, type='text',summary=rep(FALSE, length(btnoccur)))
 
 ### Distributions
 ```{r distr, echo=FALSE, warning=FALSE}
-colheads <- c('Gender','Stage','T','N','i.M')
-j <- c('E','EM','M','Gender','Stage','Tumor.Type','T','N','i.M')
+colheads <- c('Gender','Stage','i.M')
+j <- c('E','EM','M','SC','Gender','Stage','Tumor.Type','i.M')
 plotdistri <- function(x,y,m){
   temp <- melt(x[,m, with=FALSE])
   sapply(y, function(n){
           p <-ggplot(temp, aes(x=variable)) +
             geom_jitter(aes_string(y='value',color=n),position = position_jitter(width = .4), group=1) + geom_boxplot(aes_string(y='value',color=n),alpha=.01, group=1) +
             geom_jitter(aes_string(y='value',color=n),position = position_jitter(width = .4), group=2) + geom_boxplot(aes_string(y='value',color=n),alpha=.01, group=2) +
-            geom_jitter(aes_string(y='value',color=n),position = position_jitter(width = .4),group=3) + geom_boxplot(aes_string(y='value',color=n),alpha=.01, group=3)
+            geom_jitter(aes_string(y='value',color=n),position = position_jitter(width = .4),group=3) + geom_boxplot(aes_string(y='value',color=n),alpha=.01, group=3) +
+            geom_jitter(aes_string(y='value',color=n),position = position_jitter(width = .4),group=4) + geom_boxplot(aes_string(y='value',color=n),alpha=.01, group=4)
       plot(p)
   })
 }
@@ -157,21 +188,22 @@ plotdistri(BTNDT, colheads,j)
 #### EMT breakdowns
 
 ```{r distrb, echo=FALSE, message=FALSE, warning=FALSE}
-jb <- c('p','c','pc','mp','mc','mpc','Gender','Stage','Tumor.Type','T','N','i.M')
+jb <- c('p','c','pc','mp','mc','mpc','Gender','Stage','Tumor.Type','T','i.N','i.M')
 plotdistri(BTNDT,colheads,jb)
 ```
 ### Percent Distributions
 
 ```{r percentdistr, echo=FALSE, message=FALSE, warning=FALSE}
-
-emtper <- BTNDT[, .(Patient.ID,E = E /(E + EM + M), EM = EM/(E+EM+M), M = M/(E+EM+M), Gender, Stage,T,N,i.M, Tumor.Type,vital.status,OS,Progression,PFS)]
+colheads <- c('Gender','Stage','i.M')
+j <- c('E','EM','M','SC','Gender','Stage','Tumor.Type','i.M')
+emtper <- BTNDT[, .(Patient.ID,E = E /(E + EM + M + SC), EM = EM/(E+EM+M + SC), M = M/(E+EM+M+SC), SC=SC/(E+EM+M+SC), Gender, Stage,i.M, Tumor.Type,vital.status,OS,Progression,PFS)]
 plotdistri(emtper, colheads, j)
 
 ```
 
 ## Longitudinal Observations
 
-```{r longsetup, echo=FALSE, message=FALSE, warning=FALSE}
+```{r longsetup, echo=FALSE, message=FALSE, warning=TRUE}
 # Multiple plot function
 #
 # ggplot objects can be passed in ..., or to plotlist (as a list of ggplot objects)
@@ -229,24 +261,147 @@ longFrames <- function(x){
 
 plotLong <- function(n){
   ## x is datatable/list of datatable
-  cols <- c("Epithelial"='#e41a1c', "EMT"='#377eb8',"Mesenchymal"='#4daf4a', "CA19"='#984ea3', "test2" = "#ff7f00")
+  cols <- c("Epithelial"='#e41a1c', "EMT"='#377eb8',"Mesenchymal"='#4daf4a', "CA19"='#984ea3', "Stem Cells" = "#ff7f00")
   ps <- lapply(n, function(x){
     ggplot(x, aes(x=Draw.ID, y=E,  color="Epithelial")) + 
       geom_point(group=1) + geom_line(group=1) + 
       geom_point(aes(x=Draw.ID, y=EM, color="EMT"), group=2) + geom_line(aes(x=Draw.ID, y=EM, color="EMT"),group=2) +
-      geom_point(aes(x=Draw.ID, y=M, color="Mesenchymal"), group=3) + geom_line(aes(x=Draw.ID, y=M, color="Mesenchymal"),group=3) +
+      geom_point(aes(x=Draw.ID, y=M, color="Mesenchymal"), group=3) + geom_line(aes(x=Draw.ID, y=M, color="Mesenchymal"),group=3) + 
+      geom_point(aes(x=Draw.ID, y=SC, color="Stem Cells"), group=5) + geom_line(aes(x=Draw.ID, y=SC, color="Stem Cells"),group=5) +
+      geom_point(aes(x=Draw.ID, y=-1, color=response), size=3, group=4)+
       labs(x="Draw ID", y="") + theme(legend.position = 'bottom')
   })
   ca19 <- lapply(n, function(x){
     ggplot(x, aes(x=Draw.ID, y=CA19, color="CA19")) +
       geom_point(group=1) + geom_line(group=1) +
+      geom_point(aes(x=Draw.ID, y=-1, color=response), size=3, group=4)+
       labs(x="Draw ID", y="CA19-9") + theme(legend.position = 'bottom')
   })
   mapply(function(x,y){multiplot(x,y,cols=2)},ps,ca19)
 }
+
+```
+
+```{r temp, echo=FALSE}
+firstPD <- function(x){
+  # takes in data.table
+  temp <- x[response == "PD", .SD[1], by=Patient.ID]
+  temp[, pred := 1]
+  temp <- temp[, .(Draw.ID,pred)]
+  joined <- temp[x, on=Draw.ID]
+  return(joined)
+}
+
+lastNotPD <- function(x){
+  # takes in DTT which then applys longFrames to. 
+  temp <- longFrames(x)
+  PDlist <- lapply(temp, function(x){
+    t1 <- as.data.table(x)
+    if((!"PD" %in% x$response)){
+      x[, pred := 1]
+      return(x[response != "PD" & !is.na(response), .SD[.N]])
+    }
+  })
+  return(PDlist)
+}
+
 ```
 
 ```{r longplot, echo=FALSE, message=FALSE, warning=FALSE}
-groups <- longFrames(DT3)
+groups <- longFrames(DT4)
 plotLong(groups)
+```
+
+```{r predictionsetup, echo=FALSE, message=FALSE}
+DT5 <- DT4
+setkey(DT5, Draw.ID)
+DT5 <- unique(DT5)
+DT5 <- DT5[order(Patient.ID, draw_date)]
+addSinglePred <- function(x){
+  # function takes in a list of datatables and applies adds a day of (response) and next response (next) as columns. If response doesn't exist put in NA
+  tDT <- x[, c('rnext', 'rdate', 'rnext2', 'rdate2') := .(shift(response, n=1L, fill=NA, type="lead"),
+                                            shift(draw_date, type="lead") - draw_date,
+                                            shift(response, n=2L, fill=NA, type="lead"),
+                                            shift(draw_date, n=2L, type="lead") - draw_date), by=Patient.ID]
+  return(tDT)
+}
+addTrend <- function(x){
+  tDT <- x[, c('tE', 'tEM', 'tM', 'tSC', 'tnext','tdate','tnext2','tdate2') := .(
+                                              E - shift(E),
+                                              EM - shift(EM),
+                                              M - shift(M),
+                                              SC - shift(SC),
+                                              shift(response, n=1L, fill=NA, type="lead"),
+                                              shift(draw_date, type="lead") - draw_date,
+                                              shift(response, n=2L, fill=NA, type="lead"),
+                                              shift(draw_date, n=2L, type="lead") - draw_date
+    ), by=Patient.ID]
+  tDT <- x[, c('tpE', 'tpEM', 'tpSC') := .(
+                                              perE - shift(perE),
+                                              perEM - shift(perEM),
+                                              perSC - shift(perSC)
+    ), by=Patient.ID]
+  return(tDT)
+}
+
+addSinglePred(DT5)
+addTrend(DT5)
+
+processPredictions <- function(x){
+  tDT <- x[, rProg := mapply(function(a, b, c, d, e){
+        if(!is.na(a)){
+          if(a == 'PD'){
+            return(1L)
+          }
+        }
+        if (!is.na(d)) {
+          if(b == 'PD'  && d <= 180){
+            return(1L)
+          }
+        }
+        if (!is.na(e)) {
+          if(c == 'PD' && e <= 180){
+            return(1L)            
+          }
+        }
+        return(0L)
+      
+  },response, rnext, rnext2, rdate, rdate2)
+    ]
+  
+  tDT <- tDT[, tProg := mapply(function(a, b, c, d, e){
+        if(!is.na(a)){
+          if(a == 'PD'){
+            return(1L)
+          }
+        }
+        if (!is.na(d)) {
+          if(b == 'PD'  && d <= 180){
+            return(1L)
+          }
+        }
+        if (!is.na(e)) {
+          if(c == 'PD' && e <= 180){
+            return(1L)            
+          }
+        }
+        return(0L)
+      
+  },response, tnext, tnext2, tdate, tdate2)
+    ]
+  return(tDT)
+}
+
+```
+```{r test}
+
+imageAsPoint <- function(x){
+  tDT <- x
+  tDT[, Draw.Index := gsub('.*-', '', Draw.ID)]
+  tDT[,sList := mapply(function(x,y,z){
+                            l <- list( )
+                            return(l)
+    }, SC, draw_date, Draw.Index)]
+  return(tDT)
+}
 ```
