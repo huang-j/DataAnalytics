@@ -1,0 +1,919 @@
+---
+title: "CTC ROC and AUC + more"
+author: "Jonathan Huang"
+date: "3/26/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## ROCs and Thresholds
+
+The purpose of this document is to attempt to uncover a strong relationship between variables and outcome where the variable is binary from a threshold.
+
+To do so, there are several directions to take the data. The two general overarching methods are Sample based and Patient Based.
+
+Sample Based
+> Sample based is more concerned with samples in general. In this case, more samples are used. But the issue is that similar/different events can have both the same and different outcomes. This tends to lead to an issue where there is no statistical significance at all. Of course this issue is less apparent when the correlation is very strong. Tends to cover
+    * One sample
+    * Delta between samples
+  Reliant on time as a distinct variable. E.g. 3 or 6 months from the point is the time limit.
+
+Patient Based
+> Patient based is more "longitudinal". Each Patient represents a point, variables are dependent a single event which can be
+    * Means
+    * Trends
+    * One of Many
+    etc.
+  Primarily concerned with determining if a patient has an event or not.
+    
+
+```{r datainput, echo=FALSE, message=FALSE}
+library(data.table)
+library(plyr)
+library(dplyr)
+library(survival)
+library(survminer)
+library(ggplot2)
+library(ggpubr)
+library(stargazer)
+library(stringr)
+library(pROC)
+library(ROCR)
+library(scales)
+ontherapy <- fread("ontherapy.csv")
+
+####################
+# ALL CTC
+allct <- fread("AllCTCwnormals.csv")
+# set variables as dates
+allct[, c("draw_date", "t.start") := .(as.Date(draw_date), as.Date(t.start))]
+allct <- ontherapy[allct, on="Draw.ID"]
+####################
+# TN only
+TN <- fread("CTCdataNormalized.csv")
+TN[, c("draw_date", "t.start") := .(as.Date(draw_date), as.Date(t.start))]
+TN <- ontherapy[TN, on="Draw.ID"]
+```
+
+
+## Sample Based
+
+Looking at samples.
+
+```{r sample, echo=FALSE}
+# Make copies to edit
+sampA <- allct[i.M != "Mx"]
+sampB <- TN 
+```
+
+
+### Predict 3 or 6 months
+
+Look at samples as points. Given a value, does the patient have a PD within 3/6 months of that draw? Can be looked at with or without taking therapy into account.
+note: uses Days instead of Months. e.g. 90 days vs 180 days. Ignores BTN draws
+Issue may arise from the fact that the dates for response are the corresponding to draw_dates vs image dates.
+
+```{r samp36, message=FALSE}
+predictMonths <- function(dt, days, s, therapy){
+  temp <- dt[Patient.ID == str_replace(eval(s), "-.*", ""),
+             .(Patient.ID, Draw.ID, draw_date, t.start, response)]
+  temp <- temp[draw_date <= (temp[Draw.ID == eval(s), draw_date] + days)]
+  if(therapy == 1){
+    temp <- temp[t.start == temp[Draw.ID == eval(s), t.start] & response == "PD",.N]
+    ifelse(temp >= 1, return(1), return(0))
+  } else {
+    temp <- temp[response == "PD",.N]
+    ifelse(temp >= 1, return(1), return(0))
+  }
+}
+predictMonthsPR <- function(dt, days, s, therapy){
+  temp <- dt[Patient.ID == str_replace(eval(s), "-.*", ""),
+             .(Patient.ID, Draw.ID, draw_date, t.start, response)]
+  temp <- temp[draw_date <= (temp[Draw.ID == eval(s), draw_date] + days)]
+  if(therapy == 1){
+    temp <- temp[t.start == temp[Draw.ID == eval(s), t.start] & response == "PR",.N]
+    ifelse(temp >= 1, return(1), return(0))
+  } else {
+    temp <- temp[response == "PD",.N]
+    ifelse(temp >= 1, return(1), return(0))
+  }
+}
+deltaDates <- function(x){
+  # function takes in a list of datatables and applies adds a day of (response) and next response (next) as columns. If response doesn't exist put in NA
+  tDT <- x[, c('rnext', 'rdate') := .(shift(response, n=1L, fill=NA, type="lead"),
+                                            shift(draw_date, type="lead") - draw_date)
+                                            , by=Patient.ID]
+  return(tDT)
+}
+simpDelta <- function(x, vars){
+  tDT <- x
+  for(i in 1:length(vars)){
+    var = vars[i]
+    tvar = paste("t",var,sep="")
+    tDT[, eval(tvar) := get(var) - shift(get(var)), by=.(Patient.ID, line)]
+  }
+  return(tDT)
+}
+compDelta <- function(x, vars){
+  tDT <- x
+  for(i in 1:length(vars)){
+    var = vars[i]
+    tvar = paste("p",var,sep="")
+    tDT[, eval(tvar) := get(var)/(shift(get(var)) + 1), by=.(Patient.ID, line)]
+  }
+  return(tDT)
+}
+
+plotdistri <- function(x,y,m, pred){
+  temp <- melt(x[,m, with=FALSE], id.vars=c(y, pred))
+  temp[, value:= ifelse(value > 200, 200,value)]
+  sapply(y, function(n){
+          # p.means <- ddply(temp, c(n, pred), summarise, mn = mean(value))
+          p <- ggplot(temp, aes(x=factor(get(pred)))) +
+            geom_point(aes_string(y='value',color=pred),position = position_jitterdodge(dodge.width = .7), group=1) + geom_boxplot(aes_string(y='value',fill=pred),alpha=.01, group=1) +
+            stat_compare_means(aes_string(y='value', group=pred), label="p.format") +
+            facet_grid(get(n)~variable, scales="free") +
+            labs(title=paste("Distribution of Variables dependent on M staging: ",pred), x=pred)
+            # geom_text(data = p.means, aes(x=factor(get(pred)), y=mn, label=mn), size=5, vjust=-1.5)
+      plot(p)
+  })
+}
+plotdistriNS <- function(x,y,m, pred){
+  temp <- melt(x[,m, with=FALSE], id.vars=c(y, pred))
+  temp[, value:= ifelse(value > 200, 200,value)]
+  sapply(y, function(n){
+          p <- ggplot(temp, aes(x=factor(get(pred)))) +
+            geom_point(aes_string(y='value',color=pred),position = position_jitterdodge(dodge.width = .7), group=1) + geom_boxplot(aes_string(y='value',fill=pred),alpha=.01, group=1) +
+            stat_compare_means(aes_string(y='value', group=pred), label="p.format") +
+            facet_grid(.~variable, scales="free") +
+            labs(title=paste("Distribution of Variables dependent on M staging: ",pred), x=pred)
+      plot(p)
+  })
+}
+####### 
+# Allct
+sampA[, c("pred3", "pred6") := .(sapply(Draw.ID, function(x){predictMonths(sampA, 90, x, 1)}),
+                                 sapply(Draw.ID, function(x){predictMonths(sampA, 180, x, 1)}))]
+sampA[, c("pred3", "pred6") := .(as.factor(pred3), as.factor(pred6))]
+sampA <- deltaDates(sampA)
+Aon <- simpDelta(sampA[On.Therapy != 0 & response != "Baseline untreated"], c("E", "EM", "M", "SC", "tot","cfKRAS","exoKRAS"))
+Aon <- compDelta(Aon, c("E", "EM", "M", "SC", "tot"))
+Aline <- simpDelta(sampA[response != "Baseline untreated"], c("E", "EM", "M", "SC", "tot", "ve","vc","vec","cfKRAS","exoKRAS"))
+Aline <- compDelta(Aline, c("E", "EM", "M", "SC", "tot","ve","vc","vec"))
+
+#######
+# BTN
+sampB[, c("pred3", "pred6", "pred4", "pred8") := .(sapply(Draw.ID, function(x){predictMonths(sampB, 90, x, 1)}),
+                                 sapply(Draw.ID, function(x){predictMonths(sampB, 180, x, 1)}),
+                                 sapply(Draw.ID, function(x){predictMonths(sampB, 120, x, 1)}),
+                                 sapply(Draw.ID, function(x){predictMonths(sampB, 240, x, 1)}))]
+sampB[, c("pred3", "pred6", "pred4", "pred8") := .(as.factor(pred3), as.factor(pred6), as.factor(pred4), as.factor(pred8))]
+
+## samp months PR
+sampB[, c("PRpred3", "PRpred6", "PRpred4", "PRpred8") := .(sapply(Draw.ID, function(x){predictMonthsPR(sampB, 90, x, 1)}),
+                                 sapply(Draw.ID, function(x){predictMonthsPR(sampB, 180, x, 1)}),
+                                 sapply(Draw.ID, function(x){predictMonthsPR(sampB, 120, x, 1)}),
+                                 sapply(Draw.ID, function(x){predictMonthsPR(sampB, 240, x, 1)}))]
+sampB[, c("PRpred3", "PRpred6", "PRpred4", "PRpred8") := .(as.factor(pred3), as.factor(pred6), as.factor(pred4), as.factor(pred8))]
+Bon <- simpDelta(sampB[On.Therapy != 0 & response != "Baseline untreated"], c("prop.E", "prop.EM","prop.SC","prop.tot"))
+Bon <- compDelta(Bon, c("E", "EM", "SC","tot"))
+
+A <- sampA[response != "Baseline untreated"]
+B <- sampB[response != "Baseline untreated"]
+BTN <- sampB[response == "Baseline untreated"]
+BTN[, Progression := as.factor(Progression)]
+
+```
+
+
+
+#### General Distributions based on Prediction in 3/6 months
+
+Do we see a difference between the points that have shown progression in the past 3-6 months?
+
+##### All Patients
+
+```{r pred36distALL, echo=FALSE, include=FALSE}
+## Allct
+# j <- c('tot', 'totU','i.M',"pred3")
+# plotdistri(A, c("i.M"), j, "pred3")
+# j <- c('tot', 'totU','i.M',"pred6")
+# plotdistri(A, c("i.M"), j, "pred6")
+# 
+# j <- c('E','EM','M','SC','numClust','i.M', "pred3")
+# plotdistri(A,c("i.M"),j, "pred3")
+# j <- c('E','EM','M','SC','numClust','i.M', "pred6")
+# plotdistri(A, c("i.M"), j, "pred6")
+# 
+# j <- c('e','c','ec','ve','vc','vec','i.M',"pred3")
+# plotdistri(A,c("i.M"),j, "pred3")
+# j <- c('e','c','ec','ve','vc','vec','i.M',"pred6")
+# plotdistri(A, c("i.M"), j, "pred6")
+# 
+# ## looking at groupings together
+# j <- c('e2', 've2', 'vec', 've.vc', 'i.M', 'pred3')
+# plotdistri(A,c("i.M"),j, "pred3")
+# j <- c('e2', 've2', 'vec', 've.vc', 'i.M', 'pred6')
+# plotdistri(A,c("i.M"),j, "pred6")
+
+# j <- c('c2', 'vc2', 'vec', 've.vc', 'i.M', 'pred3')
+# plotdistri(A,c("i.M"),j, "pred3")
+# j <- c('c2', 'vc2', 'vec', 've.vc', 'i.M', 'pred6')
+# plotdistri(A,c("i.M"),j, "pred6")
+# 
+# j <- c('CA19', 'i.M', 'pred3')
+# plotdistri(A,c("i.M"),j, "pred3")
+# j <- c('CA19', 'i.M', 'pred6')
+# plotdistri(A,c("i.M"),j, "pred6")
+# 
+# ## draw to draw
+# j <- c('tE', 'tEM', 'tM', 'tSC', 'ttot', 'i.M', 'pred3')
+# plotdistri(Aon,c("i.M"),j, "pred3")
+# j <- c('tE', 'tEM', 'tM', 'tSC', 'ttot', 'i.M', 'pred6')
+# plotdistri(Aon,c("i.M"),j, "pred6")
+# 
+# j <- c('pE', 'pEM', 'pM', 'pSC', 'ptot', 'i.M', 'pred3')
+# plotdistri(Aon,c("i.M"),j, "pred3")
+# j <- c('pE', 'pEM', 'pM', 'pSC', 'ptot', 'i.M', 'pred6')
+# plotdistri(Aon,c("i.M"),j, "pred6")
+
+### same line doesnt matter if on therapy (no btn)
+j <- c('tE', 'tEM', 'tM', 'tSC', 'ttot', 'i.M', 'pred3')
+plotdistri(Aline,c("i.M"),j, "pred3")
+j <- c('tE', 'tEM', 'tM', 'tSC', 'ttot', 'i.M', 'pred6')
+plotdistri(Aline,c("i.M"),j, "pred6")
+
+j <- c('pE', 'pEM', 'pM', 'pSC', 'ptot', 'i.M', 'pred3')
+plotdistri(Aline,c("i.M"),j, "pred3")
+j <- c('pE', 'pEM', 'pM', 'pSC', 'ptot', 'i.M', 'pred6')
+plotdistri(Aline,c("i.M"),j, "pred6")
+
+j <- c('tve', 'tvc', 'tvec', 'i.M', 'pred3')
+plotdistri(Aline,c("i.M"),j, "pred3")
+j <- c('tve', 'tvc', 'tvec', 'i.M', 'pred6')
+plotdistri(Aline,c("i.M"),j, "pred6")
+
+j <- c('pve', 'pvc', 'pvec', 'i.M', 'pred3')
+plotdistri(Aline,c("i.M"),j, "pred3")
+j <- c('pve', 'pvc', 'pvec', 'i.M', 'pred6')
+plotdistri(Aline,c("i.M"),j, "pred6")
+```
+
+
+##### BTN
+
+```{r justpoints, echo=FALSE, include=FALSE}
+# j <- c('tot', 'totU','i.M',"pred3")
+# plotdistri(B, c("i.M"), j, "pred3")
+# j <- c('tot', 'totU','i.M',"pred6")
+# plotdistri(B, c("i.M"), j, "pred6")
+# 
+# j <- c('E','EM','M','SC','numClust','i.M', "pred3")
+# plotdistri(B,c("i.M"),j, "pred3")
+# j <- c('E','EM','M','SC','numClust','i.M', "pred6")
+# plotdistri(B, c("i.M"), j, "pred6")
+# 
+# 
+# j <- c('e','c','ec','ve','vc','vec','i.M',"pred3")
+# plotdistri(B,c("i.M"),j, "pred3")
+# j <- c('e','c','ec','ve','vc','vec','i.M',"pred6")
+# plotdistri(B, c("i.M"), j, "pred6")
+# 
+# ## looking at groupings together
+# j <- c('e2', 've2', 'vec', 'i.M', 'pred3')
+# plotdistri(B,c("i.M"),j, "pred3")
+# j <- c('e2', 've2', 'vec', 'i.M', 'pred6')
+# plotdistri(B,c("i.M"),j, "pred6")
+
+j <- c('c2', 'vc2', 'vec', 've.vc', 'i.M', 'pred3')
+plotdistri(B,c("i.M"),j, "pred3")
+j <- c('c2', 'vc2', 'vec', 've.vc', 'i.M', 'pred6')
+plotdistri(B,c("i.M"),j, "pred6")
+
+j <- c('CA19', 'i.M', 'pred3')
+plotdistri(B,c("i.M"),j, "pred3")
+j <- c('CA19', 'i.M', 'pred6')
+plotdistri(B,c("i.M"),j, "pred6")
+
+## draw to draw
+j <- c('pE', 'pEM', 'pSC', 'ptot', 'i.M', 'pred3')
+plotdistri(Bon,c("i.M"),j, "pred3")
+j <- c('pE', 'pEM', 'pSC', 'ptot', 'i.M', 'pred6')
+plotdistri(Bon,c("i.M"),j, "pred6")
+
+j <- c('tprop.E', 'tprop.EM', 'tprop.SC', 'tprop.tot', 'i.M', 'pred3')
+plotdistri(Bon,c("i.M"),j, "pred3")
+j <- c('tprop.E', 'tprop.EM', 'tprop.SC', 'tprop.tot', 'i.M', 'pred6')
+plotdistri(Bon,c("i.M"),j, "pred6")
+```
+
+  
+  
+###### Just BTN draws
+
+```{r pred36btn, echo=FALSE, include=FALSE}
+# 
+# j <- c('tot', 'totU','i.M',"Progression")
+# plotdistri(BTN, c("i.M"), j, "Progression")
+# j <- c('tot', 'totU','i.M',"pred4")
+# plotdistri(BTN, c("i.M"), j, "pred4")
+# j <- c('tot', 'totU','i.M',"pred8")
+# plotdistri(BTN, c("i.M"), j, "pred8")
+# j <- c('tot', 'totU','i.M',"pred3")
+# plotdistri(BTN, c("i.M"), j, "pred3")
+# j <- c('tot', 'totU','i.M',"pred6")
+# plotdistri(BTN, c("i.M"), j, "pred6")
+# 
+# j <- c('E','EM','M','SC','numClust','i.M', "Progression")
+# plotdistri(BTN,c("i.M"),j, "Progression")
+# j <- c('E','EM','M','SC','numClust','i.M', "pred4")
+# plotdistri(BTN,c("i.M"),j, "pred4")
+# j <- c('E','EM','M','SC','numClust','i.M', "pred8")
+# plotdistri(BTN, c("i.M"), j, "pred8")
+# j <- c('E','EM','M','SC','numClust','i.M', "pred3")
+# plotdistri(BTN,c("i.M"),j, "pred3")
+# j <- c('E','EM','M','SC','numClust','i.M', "pred6")
+# plotdistri(BTN, c("i.M"), j, "pred6")
+# 
+# j <- c('e','c','ec','ve','vc','vec','i.M',"Progression")
+# plotdistri(BTN,c("i.M"),j, "Progression")
+# j <- c('e','c','ec','ve','vc','vec','i.M',"pred4")
+# plotdistri(BTN,c("i.M"),j, "pred4")
+# j <- c('e','c','ec','ve','vc','vec','i.M',"pred8")
+# plotdistri(BTN, c("i.M"), j, "pred8")
+# j <- c('e','c','ec','ve','vc','vec','i.M',"pred3")
+# plotdistri(BTN,c("i.M"),j, "pred3")
+# j <- c('e','c','ec','ve','vc','vec','i.M',"pred6")
+# plotdistri(BTN, c("i.M"), j, "pred6")
+# 
+# ## looking at groupings together
+# j <- c('e2', 've2', 'vec', 'i.M', 'Progression')
+# plotdistri(BTN,c("i.M"),j, "Progression")
+# j <- c('e2', 've2', 'vec', 'i.M', 'pred4')
+# plotdistri(BTN,c("i.M"),j, "pred4")
+# j <- c('e2', 've2', 'vec', 'i.M', 'pred8')
+# plotdistri(BTN,c("i.M"),j, "pred8")
+# j <- c('e2', 've2', 'vec', 'i.M', 'pred3')
+# plotdistri(BTN,c("i.M"),j, "pred3")
+# j <- c('e2', 've2', 'vec', 'i.M', 'pred6')
+# plotdistri(BTN,c("i.M"),j, "pred6")
+
+j <- c('c2', 'vc2', 'vec', 've.vc', 'i.M', 'Progression')
+plotdistri(BTN,c("i.M"),j, "Progression")
+j <- c('c2', 'vc2', 'vec', 've.vc', 'i.M', 'pred4')
+plotdistri(BTN,c("i.M"),j, "pred4")
+j <- c('c2', 'vc2', 'vec', 've.vc', 'i.M', 'pred8')
+plotdistri(BTN,c("i.M"),j, "pred8")
+j <- c('c2', 'vc2', 'vec', 've.vc', 'i.M', 'pred3')
+plotdistri(BTN,c("i.M"),j, "pred3")
+j <- c('c2', 'vc2', 'vec', 've.vc', 'i.M', 'pred6')
+plotdistri(BTN,c("i.M"),j, "pred6")
+
+j <- c('CA19', 'i.M', 'Progression')
+plotdistri(BTN,c("i.M"),j, "Progression")
+j <- c('CA19', 'i.M', 'pred4')
+plotdistri(BTN,c("i.M"),j, "pred4")
+j <- c('CA19', 'i.M', 'pred8')
+plotdistri(BTN,c("i.M"),j, "pred8")
+j <- c('CA19', 'i.M', 'pred3')
+plotdistri(BTN,c("i.M"),j, "pred3")
+j <- c('CA19', 'i.M', 'pred6')
+plotdistri(BTN,c("i.M"),j, "pred6")
+```
+  
+  
+  
+###### Just BTN draws
+
+```{r pred36btnlog, echo=FALSE, include=FALSE}
+## log10
+BTN[, c('log.tot', 'log.totU', 'log.E','log.EM','log.M','log.SC','log.e','log.c','log.ec','log.ve','log.vc','log.vec','log.e2', 'log.ve2', 'log.c2', 'log.vc2') :=
+      .(
+        log10(tot + 1),
+        log10(totU + 1),
+        log10(E + 1),
+        log10(EM + 1),
+        log10(M + 1),
+        log10(SC + 1),
+        log10(e + 1),
+        log10(c + 1),
+        log10(ec + 1),
+        log10(ve + 1),
+        log10(vc + 1),
+        log10(vec + 1),
+        log10(e2 + 1),
+        log10(ve2 + 1),
+        log10(c2 + 1),
+        log10(vc2 + 1)
+      )]
+
+j <- c('log.tot', 'log.totU','i.M',"Progression")
+plotdistri(BTN, c("i.M"), j, "Progression")
+j <- c('log.tot', 'log.totU','i.M',"pred4")
+plotdistri(BTN, c("i.M"), j, "pred4")
+j <- c('log.tot', 'log.totU','i.M',"pred8")
+plotdistri(BTN, c("i.M"), j, "pred8")
+j <- c('log.tot', 'log.totU','i.M',"pred3")
+plotdistri(BTN, c("i.M"), j, "pred3")
+j <- c('log.tot', 'log.totU','i.M',"pred6")
+plotdistri(BTN, c("i.M"), j, "pred6")
+
+j <- c('log.E','log.EM','log.M','log.SC','numClust','i.M', "Progression")
+plotdistri(BTN,c("i.M"),j, "Progression")
+j <- c('log.E','log.EM','log.M','log.SC','numClust','i.M', "pred4")
+plotdistri(BTN,c("i.M"),j, "pred4")
+j <- c('log.E','log.EM','log.M','log.SC','numClust','i.M', "pred8")
+plotdistri(BTN, c("i.M"), j, "pred8")
+j <- c('log.E','log.EM','log.M','log.SC','numClust','i.M', "pred3")
+plotdistri(BTN,c("i.M"),j, "pred3")
+j <- c('log.E','log.EM','log.M','log.SC','numClust','i.M', "pred6")
+plotdistri(BTN, c("i.M"), j, "pred6")
+
+j <- c('log.e','log.c','log.ec','log.ve','log.vc','log.vec','i.M',"Progression")
+plotdistri(BTN,c("i.M"),j, "Progression")
+j <- c('log.e','log.c','log.ec','log.ve','log.vc','log.vec','i.M',"pred4")
+plotdistri(BTN,c("i.M"),j, "pred4")
+j <- c('log.e','log.c','log.ec','log.ve','log.vc','log.vec','i.M',"pred8")
+plotdistri(BTN, c("i.M"), j, "pred8")
+j <- c('log.e','log.c','log.ec','log.ve','log.vc','log.vec','i.M',"pred3")
+plotdistri(BTN,c("i.M"),j, "pred3")
+j <- c('log.e','log.c','log.ec','log.ve','log.vc','log.vec','i.M',"pred6")
+plotdistri(BTN, c("i.M"), j, "pred6")
+
+## looking at groupings together
+j <- c('log.e2', 'log.ve2', 'log.vec', 'i.M', 'Progression')
+plotdistri(BTN,c("i.M"),j, "Progression")
+j <- c('log.e2', 'log.ve2', 'log.vec', 'i.M', 'pred4')
+plotdistri(BTN,c("i.M"),j, "pred4")
+j <- c('log.e2', 'log.ve2', 'log.vec', 'i.M', 'pred8')
+plotdistri(BTN,c("i.M"),j, "pred8")
+j <- c('log.e2', 'log.ve2', 'log.vec','i.M', 'pred3')
+plotdistri(BTN,c("i.M"),j, "pred3")
+j <- c('log.e2', 'log.ve2', 'log.vec','i.M', 'pred6')
+plotdistri(BTN,c("i.M"),j, "pred6")
+
+j <- c('log.c2', 'log.vc2', 'log.vec', 'i.M', 'Progression')
+plotdistri(BTN,c("i.M"),j, "Progression")
+j <- c('log.c2', 'log.vc2', 'log.vec', 'i.M', 'pred4')
+plotdistri(BTN,c("i.M"),j, "pred4")
+j <- c('log.c2', 'log.vc2', 'log.vec', 'i.M', 'pred8')
+plotdistri(BTN,c("i.M"),j, "pred8")
+j <- c('log.c2', 'log.vc2', 'log.vec', 'i.M', 'pred3')
+plotdistri(BTN,c("i.M"),j, "pred3")
+j <- c('log.c2', 'log.vc2', 'log.vec', 'i.M', 'pred6')
+plotdistri(BTN,c("i.M"),j, "pred6")
+```
+  
+###### Proportions and subs
+
+```{r pred36distpropsub, echo=FALSE, include=FALSE}
+## BTN
+# j <- c('prop.tot', 'prop.totU','i.M',"pred3")
+# plotdistri(B, c("i.M"), j, "pred3")
+# j <- c('prop.tot', 'prop.totU','i.M',"pred6")
+# plotdistri(B, c("i.M"), j, "pred6")
+# 
+# j <- c('prop.E','prop.EM','prop.M','prop.SC','prop.clust','i.M', "pred3")
+# plotdistri(B, c("i.M"), j, "pred3")
+# j <- c('prop.E','prop.EM','prop.M','prop.SC','prop.clust','i.M', "pred6")
+# plotdistri(B, c("i.M"), j, "pred6")
+# 
+# j <- c('prop.e','prop.c','prop.ec','prop.ve','prop.vc','prop.vec','i.M',"pred3")
+# plotdistri(B, c("i.M"),j, "pred3")
+# j <- c('prop.e','prop.c','prop.ec','prop.ve','prop.vc','prop.vec','i.M',"pred6")
+# plotdistri(B, c("i.M"), j, "pred6")
+
+j <- c('prop.e2','prop.c2','prop.ve2','prop.vc2','prop.ve.vc','i.M',"pred3")
+plotdistri(B, c("i.M"),j, "pred3")
+j <- c('prop.e2','prop.c2','prop.ve2','prop.vc2','prop.ve.vc','i.M',"pred6")
+plotdistri(B, c("i.M"), j, "pred6")
+
+j <- c('prop.CA19','i.M',"pred3")
+plotdistri(B, c("i.M"),j, "pred3")
+j <- c('prop.CA19','i.M',"pred6")
+plotdistri(B, c("i.M"), j, "pred6")
+
+
+# j <- c('prop.e','prop.c','prop.ec','prop.ve','prop.vc','prop.vec','i.M',"pred3")
+# plotdistri(B, c("i.M"),j, "pred3")
+# j <- c('prop.e','prop.c','prop.ec','prop.ve','prop.vc','prop.vec','i.M',"pred6")
+# plotdistri(B, c("i.M"), j, "pred6")
+
+# j <- c('sub.tot', 'sub.totU','i.M',"pred3")
+# plotdistri(B, c("i.M"), j, "pred3")
+# j <- c('sub.tot', 'sub.totU','i.M',"pred6")
+# plotdistri(B, c("i.M"), j, "pred6")
+# 
+# j <- c('sub.E','sub.EM','sub.M','sub.SC','sub.clust','i.M', "pred3")
+# plotdistri(B, c("i.M"), j, "pred3")
+# j <- c('sub.E','sub.EM','sub.M','sub.SC','sub.clust','i.M', "pred6")
+# plotdistri(B, c("i.M"), j, "pred6")
+# 
+# j <- c('sub.e','sub.c','sub.ec','sub.ve','sub.vc','sub.vec','i.M',"pred3")
+# plotdistri(B, c("i.M"),j, "pred3")
+# j <- c('sub.e','sub.c','sub.ec','sub.ve','sub.vc','sub.vec','i.M',"pred6")
+# plotdistri(B, c("i.M"), j, "pred6")
+
+j <- c('sub.e2','sub.c2','sub.ve2','sub.vc2','sub.ve.vc','i.M',"pred3")
+plotdistri(B, c("i.M"),j, "pred3")
+j <- c('sub.e2','sub.c2','sub.ve2','sub.vc2','sub.ve.vc','i.M',"pred6")
+plotdistri(B, c("i.M"), j, "pred6")
+
+j <- c('sub.CA19','i.M',"pred3")
+plotdistri(B, c("i.M"),j, "pred3")
+j <- c('sub.CA19','i.M',"pred6")
+plotdistri(B, c("i.M"), j, "pred6")
+
+```
+  
+  
+### Baseline to first draw on Firstline
+
+```{r firstbase, echo=FALSE, include=FALSE}
+bc <- B[Draw.ID != "MK06-10" & line == "First Line" &
+          !is.element(Patient.ID, c("GV50", "MK105", "MK48", "MK176","MK95","MK05")),
+        .SD[1], by="Patient.ID"]
+j <- c('sub.tot', 'sub.totU','i.M',"pred3")
+plotdistriNS(bc, c("i.M"), j, "pred3")
+j <- c('sub.tot', 'sub.totU','i.M',"pred6")
+plotdistriNS(bc, c("i.M"), j, "pred6")
+
+j <- c('sub.E','sub.EM','sub.M','sub.SC','sub.clust','i.M', "pred3")
+plotdistriNS(bc, c("i.M"), j, "pred3")
+j <- c('sub.E','sub.EM','sub.M','sub.SC','sub.clust','i.M', "pred6")
+plotdistriNS(bc, c("i.M"), j, "pred6")
+
+j <- c('sub.e','sub.c','sub.ec','sub.ve','sub.vc','sub.vec','i.M',"pred3")
+plotdistriNS(bc, c("i.M"),j, "pred3")
+j <- c('sub.e','sub.c','sub.ec','sub.ve','sub.vc','sub.vec','i.M',"pred6")
+plotdistriNS(bc, c("i.M"), j, "pred6")
+
+j <- c('sub.e2','sub.c2','sub.ve2','sub.vc2', 'sub.ve.vc','i.M',"pred3")
+plotdistriNS(bc, c("i.M"),j, "pred3")
+j <- c('sub.e2','sub.c2','sub.ve2','sub.vc2', 'sub.ve.vc','i.M',"pred6")
+plotdistriNS(bc, c("i.M"), j, "pred6")
+
+j <- c('sub.CA19','i.M',"pred3")
+plotdistriNS(bc, c("i.M"),j, "pred3")
+j <- c('sub.CA19','i.M',"pred6")
+plotdistriNS(bc, c("i.M"), j, "pred6")
+
+## Prop
+j <- c('prop.tot', 'prop.totU','i.M',"pred3")
+plotdistriNS(bc, c("i.M"), j, "pred3")
+j <- c('prop.tot', 'prop.totU','i.M',"pred6")
+plotdistriNS(bc, c("i.M"), j, "pred6")
+
+j <- c('prop.E','prop.EM','prop.M','prop.SC','prop.clust','i.M', "pred3")
+plotdistriNS(bc, c("i.M"), j, "pred3")
+j <- c('prop.E','prop.EM','prop.M','prop.SC','prop.clust','i.M', "pred6")
+plotdistriNS(bc, c("i.M"), j, "pred6")
+
+
+j <- c('prop.e','prop.c','prop.ec','prop.ve','prop.vc','prop.vec','i.M',"pred3")
+plotdistriNS(bc, c("i.M"),j, "pred3")
+j <- c('prop.e','prop.c','prop.ec','prop.ve','prop.vc','prop.vec','i.M',"pred6")
+plotdistriNS(bc, c("i.M"), j, "pred6")
+
+j <- c('prop.e2','prop.c2','prop.ve2','prop.vc2', 'prop.ve.vc','i.M',"pred3")
+plotdistriNS(bc, c("i.M"),j, "pred3")
+j <- c('prop.e2','prop.c2','prop.ve2','prop.vc2', 'prop.ve.vc','i.M',"pred6")
+plotdistri(bc, c("i.M"), j, "pred6")
+
+j <- c('prop.CA19','i.M',"pred3")
+plotdistriNS(bc, c("i.M"),j, "pred3")
+j <- c('prop.CA19','i.M',"pred6")
+plotdistriNS(bc, c("i.M"), j, "pred6")
+```
+
+#### Baseline to first draw for First line M0 prediction of Partial Response (PR)
+
+```{r baselinepr, echo=FALSE, include=FALSE}
+bc <- B[i.M == "M0" & line == "First Line" &
+          !is.element(Patient.ID, c("GV50", "MK105", "MK48", "MK176","MK95","MK05")),
+        .SD[1], by="Patient.ID"]
+j <- c('tot', 'totU','i.M',"PRpred3")
+plotdistri(bc, c("i.M"), j, "PRpred3")
+j <- c('tot', 'totU','i.M',"PRpred6")
+plotdistri(bc, c("i.M"), j, "PRpred6")
+
+j <- c('E','EM','M','SC','numClust','i.M', "PRpred3")
+plotdistri(bc, c("i.M"), j, "PRpred3")
+j <- c('E','EM','M','SC','numClust','i.M', "PRpred6")
+plotdistri(bc, c("i.M"), j, "PRpred6")
+
+j <- c('e','c','ec','ve','vc','vec','i.M',"PRpred3")
+plotdistri(bc, c("i.M"),j, "PRpred3")
+j <- c('e','c','ec','ve','vc','vec','i.M',"PRpred6")
+plotdistri(bc, c("i.M"), j, "PRpred6")
+
+j <- c('e2','c2','ve2','vc2', 've.vc','i.M',"PRpred3")
+plotdistri(bc, c("i.M"),j, "PRpred3")
+j <- c('e2','c2','ve2','vc2', 've.vc','i.M',"PRpred6")
+plotdistri(bc, c("i.M"), j, "PRpred6")
+
+## sub
+j <- c('sub.tot', 'sub.totU','i.M',"PRpred3")
+plotdistri(bc, c("i.M"), j, "PRpred3")
+j <- c('sub.tot', 'sub.totU','i.M',"PRpred6")
+plotdistri(bc, c("i.M"), j, "PRpred6")
+
+j <- c('sub.E','sub.EM','sub.M','sub.SC','sub.clust','i.M', "PRpred3")
+plotdistri(bc, c("i.M"), j, "PRpred3")
+j <- c('sub.E','sub.EM','sub.M','sub.SC','sub.clust','i.M', "PRpred6")
+plotdistri(bc, c("i.M"), j, "PRpred6")
+
+j <- c('sub.e','sub.c','sub.ec','sub.ve','sub.vc','sub.vec','i.M',"PRpred3")
+plotdistri(bc, c("i.M"),j, "PRpred3")
+j <- c('sub.e','sub.c','sub.ec','sub.ve','sub.vc','sub.vec','i.M',"PRpred6")
+plotdistri(bc, c("i.M"), j, "PRpred6")
+
+j <- c('sub.e2','sub.c2','sub.ve2','sub.vc2', 'sub.ve.vc','i.M',"PRpred3")
+plotdistri(bc, c("i.M"),j, "PRpred3")
+j <- c('sub.e2','sub.c2','sub.ve2','sub.vc2', 'sub.ve.vc','i.M',"PRpred6")
+plotdistri(bc, c("i.M"), j, "PRpred6")
+
+## Prop
+j <- c('prop.tot', 'prop.totU','i.M',"PRpred3")
+plotdistri(bc, c("i.M"), j, "PRpred3")
+j <- c('prop.tot', 'prop.totU','i.M',"PRpred6")
+plotdistri(bc, c("i.M"), j, "PRpred6")
+
+j <- c('prop.E','prop.EM','prop.M','prop.SC','prop.clust','i.M', "PRpred3")
+plotdistri(bc, c("i.M"), j, "PRpred3")
+j <- c('prop.E','prop.EM','prop.M','prop.SC','prop.clust','i.M', "PRpred6")
+plotdistri(bc, c("i.M"), j, "PRpred6")
+
+
+j <- c('prop.e','prop.c','prop.ec','prop.ve','prop.vc','prop.vec','i.M',"PRpred3")
+plotdistri(bc, c("i.M"),j, "PRpred3")
+j <- c('prop.e','prop.c','prop.ec','prop.ve','prop.vc','prop.vec','i.M',"PRpred6")
+plotdistri(bc, c("i.M"), j, "PRpred6")
+
+j <- c('prop.e2','prop.c2','prop.ve2','prop.vc2', 'prop.ve.vc','i.M',"PRpred3")
+plotdistri(bc, c("i.M"),j, "PRpred3")
+j <- c('prop.e2','prop.c2','prop.ve2','prop.vc2', 'prop.ve.vc','i.M',"PRpred6")
+plotdistri(bc, c("i.M"), j, "PRpred6")
+```
+
+
+```{r ggrocs, echo=FALSE}
+# Functions plots multiple 'roc' objects into one plot
+# @param rocs
+#   A list of 'roc' objects. Every list item has a name.
+# @param breaks
+#   A vector of integers representing ticks on the x- and y-axis
+# @param legentTitle
+#   A string which is used as legend titel
+ggrocs <- function(rocs, breaks = seq(0,1,0.1), legendTitel = "Legend") {
+  if (length(rocs) == 0) {
+    stop("No ROC objects available in param rocs.")
+  } else {
+    require(plyr)
+    print("Spot 1")
+    # Store all sensitivities and specifivities in a data frame
+    # which an be used in ggplot
+    RocVals <- plyr::ldply(names(rocs), function(rocName) {
+      print("Spot 2")
+      if(class(rocs[[rocName]]) != "roc") {
+        stop("Please provide roc object from pROC package")
+      }
+      print("spot 3")
+      data.frame(
+        fpr = rev(rocs[[rocName]]$specificities),
+        tpr = rev(rocs[[rocName]]$sensitivities),
+        names = rep(rocName, length(rocs[[rocName]]$sensitivities)),
+        stringAsFactors = T
+      )
+    })
+    print(RocVals)
+    
+    aucAvg <- mean(sapply(rocs, "[[", "auc"))
+
+    rocPlot <- ggplot(RocVals, aes(x = fpr, y = tpr, colour = names)) +
+      geom_segment(aes(x = 0, y = 1, xend = 1,yend = 0), alpha = 0.5, colour = "gray") + 
+      geom_step() +
+      scale_x_reverse(name = "False Positive Rate (1 - Specificity)",limits = c(1,0), breaks = breaks) + 
+      scale_y_continuous(name = "True Positive Rate (Sensitivity)", limits = c(0,1), breaks = breaks) +
+      theme_bw() + 
+      coord_equal() + 
+      annotate("text", x = 0.1, y = 0.1, vjust = 0, label = paste("AUC =",sprintf("%.3f",aucAvg))) +
+      guides(colour = guide_legend(legendTitel)) +
+      theme(axis.ticks = element_line(color = "grey80"))
+    
+    rocPlot
+  }
+}
+```
+
+
+#### Evaluation of data through ROCs
+
+```{r samp36ROC, echo=FALSE}
+ROC <- function(dt, pred, vars, title){
+  cols <- hue_pal()(2*length(vars))
+  for (i in 1:length(vars)) {
+    plot.roc(dt[i.M == "M0", get(pred)], dt[i.M == "M0", get(vars[i])], col = cols[i], main=paste(title, "variable:", vars[i]), percent=TRUE, ci=TRUE, of="thresholds",thresholds="best", print.thres="best", asp=NA, print.auc=TRUE)
+    lines.roc(dt[i.M == "M1", get(pred)], dt[i.M == "M1", get(vars[i])], col = cols[i + length(vars)], main=paste(title, "variable:", vars[i]), percent=TRUE, ci=TRUE, of="thresholds",thresholds="best", print.thres="best", asp=NA,print.auc=TRUE,add=TRUE)
+  legend("bottomright", legend=c("M0", "M1"), col=c(cols[i], cols[i + length(vars)]), lwd=2) 
+  }
+}
+ROCc <- function(dt, pred, vars, title){
+  cols <- hue_pal()(2*length(vars))
+  for (i in 1:length(vars)) {
+    plot.roc(dt[, get(pred)], dt[, get(vars[i])], col = cols[i], main=paste(title, "variable:", vars[i]), percent=TRUE, ci=TRUE, of="thresholds",thresholds="best", print.thres="best")
+  legend("bottomright", legend=c("M0 + M1"), col=c(cols[i], cols[i + length(vars)]), lwd=2) 
+  }
+}
+ROC2 <- function(dt, pred, vars, title){
+  cols <- hue_pal()(2*length(vars))
+  for (i in 1:length(vars)) {
+    p <- plot.roc(dt[i.M == "M0", get(pred)], dt[i.M == "M0", get(vars[i])], col = cols[i], main=paste(title, "variable:", vars[i]), percent=TRUE, ci=TRUE, of="thresholds",thresholds="best", print.thres="best", asp=NA, print.auc=TRUE)
+    p <- plot.roc(dt[i.M == "M1", get(pred)], dt[i.M == "M1", get(vars[i])], col = cols[i + length(vars)], main=paste(title, "variable:", vars[i]), percent=TRUE, ci=TRUE, of="thresholds",thresholds="best", print.thres="best", asp=NA,print.auc=TRUE, print.auc.y=40, add=TRUE)
+  p <- legend("bottomright", legend=c("M0", "M1"), col=c(cols[i], cols[i + length(vars)]), lwd=2) 
+  }
+}
+# ROC <- function(dt, x, preds){
+#   rocs <- list()
+#   for(i in 1:length(x)){
+#     rocs[[i]] <- roc(dt[, get(preds)], dt[, get(x)])
+#   }
+#   return(rocs)
+# }
+# variable sets.
+vars <- c("e","c","ec","ve","ve2","vc","vc2",'ve.vc',"vec","E","EM","M","SC","U","tot","totU", "numClust","CA19")
+varsMean <- c("nMean.e","nMean.c","nMean.ec","nMean.ve","nMean.vc","nMean.vec","nMean.E","nMean.EM","nMean.M","nMean.SC","nMean.U","nMean.tot","nMean.totU")
+varsMed <- c("nMedian.e","nMedian.c","nMedian.ec","nMedian.ve","nMedian.vc","nMedian.vec","nMedian.E","nMedian.EM","nMedian.M","nMedian.SC","nMedian.U","nMedian.tot","nMedian.totU")
+varsP <- c("prop.e","prop.e2","prop.c","prop.c2","prop.ec","prop.ve","prop.ve2","prop.vc","prop.vc2",'prop.ve.vc',"prop.vec","prop.E","prop.EM","prop.M","prop.SC","prop.U","prop.tot","prop.totU", "prop.clust","prop.CA19")
+varsS <- c("sub.e","sub.e2","sub.c","sub.c2","sub.ec","sub.ve","sub.ve2","sub.vc","sub.vc2",'sub.ve.vc',"sub.vec","sub.E","sub.EM","sub.M","sub.SC","sub.U","sub.tot","sub.totU", "sub.clust","sub.CA19")
+```
+
+##### For all patients
+
+Don't necessarily expect to find anything here. Purpose is "just in case"
+Split between M1 and M0
+
+###### Single Sample as point
+
+Takes a single draw and compares within time constraint
+
+```{r samp36all, echo=FALSE, include=FALSE}
+# basic counts
+# vars <- c('ve.vc',"CA19")
+ROC(A, "pred3", vars, "ROC for prediction with 3 month time window, ")
+ROC(A, "pred6", vars, "ROC for prediction with 6 month time window, ")
+
+# nMean
+# ROC(A, "pred3", varsMean, "ROC for prediction with 3 month time window, ")
+# ROC(A, "pred6", varsMean, "ROC for prediction with 6 month time window, ")
+# 
+# # nMedian
+# ROC(A, "pred3", varsMed, "ROC for prediction with 3 month time window, ")
+# ROC(A, "pred6", varsMed, "ROC for prediction with 6 month time window, ")
+```
+
+###### Based off delta
+
+Takes in delta between points
+
+```{r samp36alldelta, echo=FALSE, include=FALSE}
+
+```
+
+##### For treatment Naives
+
+Don't necessarily expect to find anything here. Purpose is "just in case"
+
+###### Single Sample as Point
+
+```{r samp36btn, echo=FALSE, include=FALSE}
+# baseline
+#varsP <- c('prop.EM',"prop.E","prop.tot")
+#varsS <- c('sub.EM',"sub.E", "sub.tot")
+# Bt <- B[!is.element(Draw.ID, bc[,Draw.ID])]
+neoadj <- c("MK07-2","MK100-2","MK115-2","MK145-2","MK40-2","MK51-2","MK55-2","MK81-2","MK84-2","MK98-2")
+Bt <- B[!is.element(Draw.ID, neoadj)]
+ROC(Bt, "pred3", varsP, "ROC for prediction with 3 month time window, ")
+# ROC(Bt, "pred6", varsP, "ROC for prediction with 6 month time window, ")
+
+ROC(Bt, "pred3", varsS, "ROC for prediction with 3 month time window, ")
+# ROC(Bt, "pred6", varsS, "ROC for prediction with 6 month time window, ")
+```
+
+
+##### t/p by line of therapy, no baselines.
+```{r roctp, echo=FALSE}
+vars <- c("tve","tvc","tvec","tE","tEM","tM","tSC","ttot","pve","pvc","pvec","pE","pEM","pM","pSC","ptot")
+ROC(Aline, "pred3", vars, "ROC for prediction with 3 month time window, ")
+```
+
+
+##### Cut offs at 3 months KM
+
+```{r KM3months, echo=FALSE}
+# Proportions
+# B[, c('prop.e','prop.e2','prop.c','prop.c2','prop.ec','prop.ve','prop.vc','prop.ve2','prop.vc2','prop.vec',"prop.E","prop.EM","prop.M","prop.SC","prop.tot","prop.totU", "prop.clust") := 
+B[, c('prop.c2co',"prop.Eco","prop.EMco","prop.EMco2","prop.EMco3","prop.totco","prop.totco2") :=
+         .(
+           ifelse(prop.c2 >= 0.8, 1, 0),
+           ifelse(prop.E >= 0.9, 1, 0),
+           ifelse(prop.EM >= 0.6, 1, 0),
+           ifelse(prop.EM >= 1.3, 1, 0),
+           ifelse(prop.EM >= 1.4, 1, 0),
+           ifelse(prop.tot >= 1, 1, 0),
+           ifelse(prop.tot >= 1.1, 1, 0)
+         )]
+
+# Subtractions
+# B[, c('sub.e','sub.c','sub.ec','sub.ve','sub.vc','sub.vec',"sub.E","sub.EM","sub.M","sub.SC","sub.tot","sub.totU", "sub.clust") := 
+B[, c('sub.c2co','sub.c2co2',"sub.Eco","sub.EMco","sub.EMco2","sub.totco") := 
+         .(
+           ifelse(sub.c2 >= 0.8, 1, 0),
+           ifelse(sub.c2 >= -0.5, 1, 0),
+           ifelse(sub.E >= 0.8, 1, 0),
+           ifelse(sub.EM >= -0.5, 1, 0),
+           ifelse(sub.EM >= -6.5, 1, 0),
+           ifelse(sub.tot >= -12, 1, 0)
+         )]
+BTN[, "EMco" := ifelse(EM >= 5 , 1, 0)]
+BTN[, "clustco" := ifelse(numClust >= 0.5 , 1, 0)]
+BTN[, c("cfKRAS.co","exoKRAS.co") := .(
+        ifelse(cfKRAS > 0, 1, ifelse(is.na(cfKRAS),cfKRAS, 0)),
+        ifelse(exoKRAS > 5, 1, ifelse(is.na(cfKRAS),exoKRAS, 0))
+)]
+
+Aline[, c("tvc.co","tEM.co","ttot.co","pvc.co","pEM.co","ptot.co") := 
+         .(
+           ifelse(tvc >= 2.5, 1, 0),
+           ifelse(tEM >= 5, 1, 0),
+           ifelse(ttot >= 9.5, 1, 0),
+           ifelse(pvc >= 2, 1, 0),
+           ifelse(pEM >= 2.1, 1, 0),
+           ifelse(ptot >= 1.7, 1, 0)
+         )]
+
+library(survival)
+library(stargazer)
+create2by2 <- function(column, pred){
+  print(column)
+  a <- B[i.M == "M0" & eval(as.name(column)) == 1 & eval(as.name(pred)) == 1, .N]
+  b <- B[i.M == "M0" & eval(as.name(column)) == 0 & eval(as.name(pred)) == 1, .N]
+  c <- B[i.M == "M0" & eval(as.name(column)) == 1 & eval(as.name(pred)) == 0, .N]
+  d <- B[i.M == "M0" & eval(as.name(column)) == 0 & eval(as.name(pred)) == 0, .N]
+  m <- matrix(c(a,b,c,d),ncol = 2)
+  stargazer(m, type="text")
+  fisher.test(m)
+}
+subs <- c('sub.c2co','sub.c2co2',"sub.Eco","sub.EMco","sub.totco")
+props <- c('prop.c2co',"prop.Eco","prop.EMco","prop.totco")
+lapply(subs, pred="pred3", create2by2)
+lapply(props, pred="pred3", create2by2)
+```
+
+
+#### Training and Validation Sets
+
+```{r trainval, echo=FALSE}
+create2by2dt <- function(column, pred, dt){
+  print(column)
+  a <- dt[i.M == "M0" & eval(as.name(column)) == 1 & eval(as.name(pred)) == 1, .N]
+  b <- dt[i.M == "M0" & eval(as.name(column)) == 0 & eval(as.name(pred)) == 1, .N]
+  c <- dt[i.M == "M0" & eval(as.name(column)) == 1 & eval(as.name(pred)) == 0, .N]
+  d <- dt[i.M == "M0" & eval(as.name(column)) == 0 & eval(as.name(pred)) == 0, .N]
+  m <- matrix(c(a,b,c,d),ncol = 2)
+  stargazer(m, type="text")
+  fisher.test(m)
+}
+# subs <- c('sub.c2co','sub.c2co2',"sub.Eco","sub.EMco","sub.totco")
+# props <- c('prop.c2co',"prop.Eco","prop.EMco2","prop.totco")
+# lapply(subs, pred="pred3", dt=B[!is.element(Draw.ID, bc[,Draw.ID])], create2by2dt)
+# lapply(props, pred="pred3", dt=B[!is.element(Draw.ID, bc[,Draw.ID])], create2by2dt)
+# subs <- c("sub.E","sub.EMco2","sub.totco")
+# props <- c("prop.E","prop.EMco3","prop.totco2")
+# lapply(subs, pred="pred3", dt=B[is.element(Draw.ID, neoadj)], create2by2dt)
+# lapply(props, pred="pred3", dt=B[is.element(Draw.ID, neoadj)], create2by2dt)
+
+
+lapply(c("tvc.co","tEM.co","ttot.co","pvc.co","pEM.co","ptot.co"), pred="pred3", dt=Aline, create2by2dt)
+```
+
+
+##### Logistic Regressions
+
+```{r logregpred3}
+# lr <- B
+# lr[, pred3 := as.numeric(pred3) - 1]
+# lapply(subs, function(X){
+#   ggplot(lr, aes(x = X, y=pred3)) + geom_point() + geom_smooth(method = "glm", method.args=list(family = "binomial"), se=FALSE)
+# })
+
+```
+
+## Patient Based
+
+```{r pat, echo=FALSE}
+
+```

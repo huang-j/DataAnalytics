@@ -1,0 +1,103 @@
+---
+title: "CTCheatmap"
+author: "Jonathan Huang"
+date: "7/23/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Heatmaps from NGS sequencing of CTCs
+
+```{r cars}
+library(ggplot2)
+library(data.table)
+library(stringr)
+library(ComplexHeatmap)
+selectcols <- c("Gene name", "CHROM", "POS", "Mutation AA", "REF", "CTC1", "CTC2","CTC3","CTC4","Mutation Description")
+dt <- fread("AnnotatedCTCMutationList.csv", select = selectcols, col.names = c("GENE","CHROM", "POS", "Mut.AA", "REF", "CTC1", "CTC2", "CTC3", "CTC4", "Mut.Descrip"))
+dt[, CHROM := as.character(CHROM)]
+Tissue <- fread("VCF/Tissue.csv", sep="\t", select = c("CHROM","POS","REF","ALT"), col.names=(c("CHROM","POS","REF","Tissue")))
+Germline <- fread("VCF/Germline.csv", sep="\t", select = c("CHROM","POS","REF","ALT"), col.names=(c("CHROM","POS","REF","Germline")))
+dt <- Tissue[dt, on=c("CHROM","POS","REF")]
+dt <- Germline[dt, on=c("CHROM","POS","REF")]
+```
+
+## Column value changes
+
+You can also embed plots, for example:
+
+```{r filter, echo=FALSE}
+SNPfilter <- function(x){
+  if (grepl("Missense", x)){
+    return("Missense")
+  }
+  if (grepl("Nonsense", x)) {
+    return("Nonsense")
+  }
+  if (grepl("Insertion", x)) {
+    return("Insertion")
+  }
+  if (grepl("Deletion", x)) {
+    return("Deletion")
+  }
+  return(x)
+}
+dt[, c("Variant", "Mut.Type") := .(paste(GENE, Mut.AA), sapply(Mut.Descrip, SNPfilter))]
+dt[, c("CTC1","CTC2","CTC3","CTC4","Tissue","Germline") := .(
+  ifelse(CTC1 == ".", "", Mut.Type),
+  ifelse(CTC2 == ".", "", Mut.Type),
+  ifelse(CTC3 == ".", "", Mut.Type),
+  ifelse(CTC4 == ".", "", Mut.Type),
+  ifelse(is.na(Tissue), Tissue, Mut.Type),
+  ifelse(is.na(Germline), Germline, Mut.Type)
+)]
+
+m = dt[, .(Variant, CTC1, CTC2, CTC3, CTC4, Tissue, Germline)]
+varies <- m$Variant
+mat = as.matrix(m[, Variant:=NULL])
+rownames(mat) <- varies
+```
+
+## PLOT
+
+```{r plot, echo=FALSE}
+palette = hue_pal()(4)
+colors = c(Nonsense = palette[1], Missense = palette[2], Insertion = palette[3], Deletion = palette[4])
+
+## alter_fun
+alter_fun = list(
+  background = function(x,y,w,h){
+    grid.rect(x,y,w-unit(0.5, "mm"), h-unit(0.5, "mm"), gp=gpar(fill="#CCCCCC", col = NA))
+  },
+    Insertion = function(x,y,w,h){
+    grid.rect(x,y,w-unit(0.5, "mm"), h-unit(0.5, "mm"), gp=gpar(fill=palette[3], col = NA))
+  },
+    Deletion = function(x,y,w,h){
+    grid.rect(x,y,w-unit(0.5, "mm"), h-unit(0.5, "mm"), gp=gpar(fill=palette[4], col = NA))
+  },
+    Missense = function(x,y,w,h){
+    grid.rect(x,y,w-unit(0.5, "mm"), h-unit(0.5, "mm"), gp=gpar(fill=palette[2], col = NA))
+  },
+    Nonsense = function(x,y,w,h){
+    grid.rect(x,y,w-unit(0.5, "mm"), h-unit(0.5, "mm"), gp=gpar(fill=palette[1], col = NA))
+  }
+)
+
+p <- oncoPrint(mat, get_type = function(x) strsplit(x, ";")[[1]],
+          alter_fun = alter_fun,
+          col = colors,
+          column_title = "CTC Mutations",
+          show_column_names = TRUE,
+          column_order = c("CTC1", "CTC2", "CTC3", "CTC4","Tissue","Germline"),
+          show_pct = FALSE,
+          row_names_side = "left",
+          heatmap_legend_param = list(title = "Alterations",
+                                      at=c("Nonsense","Missense","Deletion","Insertion"),
+                                      labels=c("Nonsense","Missense","Deletion","Insertion")
+                                      )
+          )
+# draw(p, heatmap_legend_side = "bottom")
+```

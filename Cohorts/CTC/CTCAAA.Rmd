@@ -1,0 +1,334 @@
+---
+title: "Further CTC Analysis - normalized counts"
+author: "Jonathan Huang"
+date: "3/28/2018"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, echo=FALSE, message=FALSE}
+library(knitr)
+library(rmarkdown)
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## Exploratory Analysis of CTC data (Mean and Trends)
+
+Takes specific data from the CTCAnalysis files which are then processed by a python script to find means and/or trends etc. that take place within a certain timeframe (t) and therapy (T). Due to the stricter conditions, a large portion of draws will not be used and points will likely be patients.
+
+Files needed: A csv output from python script
+
+```{r DataSetup, echo=FALSE, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(data.table)
+library(survival)
+library(survminer)
+library(stargazer)
+# read files
+meanPred <- fread("meanPreds.csv")
+trendPred <- fread("trendPreds.csv")
+mtPred <- fread("mtPreds.csv")
+CTCdemo <- fread("CTCdemo2.csv")
+setkey(CTCdemo, Patient.ID)
+CTCdemo <- unique(CTCdemo)
+CTCdemo[,c('T','N','M','Stage') := .(gsub('[cp]','',T),
+                                     gsub('[cp]','',N),
+                                     gsub('[cp]','',M),
+                                     gsub('[AB]','',Stage)
+                                     )
+        ]
+
+# Join data
+meanDT <- CTCdemo[meanPred, on="Patient.ID"]
+trendDT <- CTCdemo[trendPred, on="Patient.ID"]
+mtDT <- CTCdemo[mtPred, on="Patient.ID"]
+meanDT[, i.PFS := as.numeric(gsub(' .*', '', i.PFS))]
+
+# The progression data is wrong for trendDT (as it finds the trend between them). Left join to meanDT
+trendDT[, Prog:=NULL]
+trendDT <- meanDT[,.(Patient.ID, Prog)][trendDT, on="Patient.ID"]
+trendDT[, i.PFS := as.numeric(gsub(' .*','',i.PFS))/8.64e+13]
+
+mtDT[, Prog:=NULL]
+mtDT <- meanDT[,.(Patient.ID, Prog)][mtDT, on="Patient.ID"]
+mtDT[, i.PFS := as.numeric(gsub(' .*','',i.PFS))/8.64e+13]
+
+# add M's to totCTC
+# meanDT[, totCTC.M := totCTC + i.M]
+# trendDT[, totCTC.M := totCTC + i.M]
+
+
+alldraws <- fread("CTCdatanormalized.csv")
+alldraws$draw_date <- as.Date(alldraws$draw_date)
+alldraws$t.start <- as.Date(alldraws$t.start)
+treated <- alldraws[!is.na(line)]
+treated1 <- treated[,.SD[1], by=Patient.ID]
+treated1 <- treated1[, prog := lapply(Patient.ID, function(x) {
+  temp <- ifelse(alldraws[Patient.ID == x & response == "PD" & (draw_date - t.start) <= 180, .N] > 0, 1, 0)
+  return(temp)
+  })
+  , by=Patient.ID]
+
+# write.csv(treated1[, .SD, .SDcols=names(treated1) %like% "Patient.ID|prop"])
+```
+
+## Models
+
+Aim to model the data in some way or form
+Will be looking at different models these include but are not limited to
+
+    * Cox Proportional Hazards
+
+Likely will need to subset into smaller groups, which will lead to very few points.
+
+Definitions of variables:
+
+```{r, echo=FALSE, results='asis'}
+type <- matrix(c("E","EM","M","SC","U","Epithelial","Transition","Mesenchymal","Stem Cells","Unlabeled", "CK+/EpCAM+", 'Vim+, CK+/EpCAM+', "Vim+","CD133+, CK+/EpCAM+",""), ncol = 3)
+colnames(type) <- c("Letter", "Cell Type", "Definition")
+type <- as.data.table(type)
+stargazer(type, type = "html", summary=FALSE, title="Cell Type Classification")
+
+breakdown <- matrix(c("c","e","v","s","CK+","EpCAM+","Vim+","CD133+"), ncol=2)
+colnames(breakdown) <- c("Letter", "Biomarker")
+breakdown <- as.data.table(breakdown)
+stargazer(breakdown, type="html", summary=FALSE, title="Biomarker Abbreviations")
+```
+
+### Initial Models (Pre-subset)
+
+Looking at univariate regression analysis for entire group
+
+  
+#### Univariate Cox
+  
+One point to consider in these CPH models is that on a few patients, the patient actually did progress, but it's not listed. This is due to the fact that in this case we censored all patients at 180 days past the last follow-up we have on file.  
+
+
+  
+```{r unisetup, echo=FALSE, message=FALSE, warning=FALSE}
+#vars <- c('e','c','ec','ve','vc','vec','s','vs','cs','ves','vcs','ecs','vecs',"E","EM","i.M","SC","totCTC")
+vars <- c('prop.e','prop.c','prop.ec','prop.ve','prop.vc','prop.vec',"prop.E","prop.EM","prop.M","prop.SC","prop.tot","prop.totU", "prop.clust",
+          'sub.e','sub.c','sub.ec','sub.ve','sub.vc','sub.vec',"sub.E","sub.EM","sub.M","sub.SC","sub.tot","sub.totU", "sub.clust",
+          'nMean.e','nMean.c','nMean.ec','nMean.ve','nMean.vc','nMean.vec',"nMean.E","nMean.EM","nMean.M","nMean.SC","nMean.tot","nMean.totU",
+          'nMedian.e','nMedian.c','nMedian.ec','nMedian.ve','nMedian.vc','nMedian.vec',"nMedian.E","nMedian.EM","nMedian.M","nMedian.SC","nMedian.tot","nMedian.totU"
+          )
+unicox <- function(DT, tTitle){
+  univ_formulas <- sapply(vars, function(x) as.formula(paste('Surv(PFS, Progression)~', x)))
+  univ_models <- lapply( univ_formulas, function(x){coxph(x, data = DT)})
+  univ_results <- lapply(univ_models,
+                       function(x){ 
+                          x <- summary(x)
+                          p.value<-signif(x$wald["pvalue"], digits=3)
+                          wald.test<-signif(x$wald["test"], digits=3)
+                          beta<-signif(x$coef[1], digits=2);#coeficient beta
+                          HR <-signif(x$coef[2], digits=2);#exp(beta)
+                          HR.confint.lower <- signif(x$conf.int[,"lower .95"], 3)
+                          HR.confint.upper <- signif(x$conf.int[,"upper .95"],3)
+                          HR <- paste0(HR, " (", 
+                                       HR.confint.lower, "-", HR.confint.upper, ")")
+                          res<-c(beta, HR, wald.test, p.value)
+                          names(res)<-c("beta", "HR (95% CI for HR)", "wald.test", 
+                                        "p.value")
+                          return(res)
+                          #return(exp(cbind(coef(x),confint(x))))
+                         })
+  res <- t(as.data.frame(univ_results, check.names = TRUE))
+  ## as.data.frame(res)
+  stargazer(res, type = 'html', title=tTitle) 
+}
+
+```
+
+  
+  
+##### Mean
+```{r meanunisetup, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+unicox(meanDT, 'Univariate Cox Regression (PFS) Mean Predictors')
+```
+  
+  
+  
+  
+  
+##### Trend
+```{r trendunisetup, echo=FALSE, results='asis', message=FALSE, warning=FALSE, include=FALSE}
+# unicox(trendDT, 'Univariate Cox Regression (PFS) Trend Predictors')
+```
+  
+  
+  
+##### Mean Trend
+```{r mtunisetup, echo=FALSE, results='asis', message=FALSE, warning=FALSE, include=FALSE}
+unicox(mtDT, 'Univariate Cox Regression (PFS) Mean Trend Predictors')
+```
+  
+### Subsets
+
+Subsetting the groups
+  
+
+#### Cox
+  
+  
+  
+  
+##### Mean
+```{r meansubsetcox, results='asis', message=FALSE, warning=FALSE}
+unicox(meanDT[gender == "Male"], 'Univariate Cox Regression (PFS) Mean Predictors Male')
+cat("<br>")
+unicox(meanDT[gender == "Female"], 'Univariate Cox Regression (PFS) Mean Predictors Female')
+cat("<br>")
+unicox(meanDT[M == "M0"], 'Univariate Cox Regression (PFS) Mean Predictors M0')
+cat("<br>")
+unicox(meanDT[M == "M1"], 'Univariate Cox Regression (PFS) Mean Predictors M1')
+cat("<br>")
+unicox(meanDT[Stage == "Stage I"], 'Univariate Cox Regression (PFS) Mean Predictors Stage I')
+cat("<br>")
+unicox(meanDT[Stage == "Stage II"], 'Univariate Cox Regression (PFS) Mean Predictors Stage II')
+cat("<br>")
+unicox(meanDT[Stage == "Stage II" | Stage == "Stage I"], 'Univariate Cox Regression (PFS) Mean Predictors Stage I+II')
+cat("<br>")
+unicox(meanDT[Stage == "Stage III"], 'Univariate Cox Regression (PFS) Mean Predictors Stage III')
+cat("<br>")
+unicox(meanDT[Stage == "Stage IV"], 'Univariate Cox Regression (PFS) Mean Predictors Stage IV')
+```
+  
+  
+  
+  
+  
+##### Trend
+```{r trendsubsetcox, results='asis', message=FALSE, warning=FALSE, include=FALSE}
+unicox(trendDT[gender == "Male"], 'Univariate Cox Regression (PFS) Trend Predictors Male')
+cat("<br>")
+unicox(trendDT[gender == "Female"], 'Univariate Cox Regression (PFS) Trend Predictors Female')
+cat("<br>")
+unicox(trendDT[M == "M0"], 'Univariate Cox Regression (PFS) Trend Predictors M0')
+cat("<br>")
+unicox(trendDT[M == "M1"], 'Univariate Cox Regression (PFS) Trend Predictors M1')
+cat("<br>")
+unicox(trendDT[Stage == "Stage I"], 'Univariate Cox Regression (PFS) Trend Predictors Stage I')
+cat("<br>")
+unicox(trendDT[Stage == "Stage II"], 'Univariate Cox Regression (PFS) Trend Predictors Stage II')
+cat("<br>")
+unicox(trendDT[Stage == "Stage II" | Stage == "Stage I"], 'Univariate Cox Regression (PFS) Trend Predictors Stage I+II')
+cat("<br>")
+unicox(trendDT[Stage == "Stage III"], 'Univariate Cox Regression (PFS) Trend Predictors Stage III')
+cat("<br>")
+unicox(trendDT[Stage == "Stage IV"], 'Univariate Cox Regression (PFS) Trend Predictors Stage IV')
+```
+
+##### Mean Trend
+```{r mtsubsetcox, results='asis', message=FALSE, warning=FALSE, include=FALSE}
+unicox(mtDT[gender == "Male"], 'Univariate Cox Regression (PFS) Mean Trend Predictors Male')
+cat("<br>")
+unicox(mtDT[gender == "Female"], 'Univariate Cox Regression (PFS) Mean Trend Predictors Female')
+cat("<br>")
+unicox(mtDT[M == "M0"], 'Univariate Cox Regression (PFS) Mean Trend Predictors M0')
+cat("<br>")
+unicox(mtDT[M == "M1"], 'Univariate Cox Regression (PFS) Mean Trend Predictors M1')
+cat("<br>")
+unicox(mtDT[Stage == "Stage I"], 'Univariate Cox Regression (PFS) Mean Trend Predictors Stage I')
+cat("<br>")
+unicox(mtDT[Stage == "Stage II"], 'Univariate Cox Regression (PFS) Mean Trend Predictors Stage II')
+cat("<br>")
+unicox(mtDT[Stage == "Stage II" | Stage == "Stage I"], 'Univariate Cox Regression (PFS) Mean Trend Predictors Stage I+II')
+cat("<br>")
+unicox(mtDT[Stage == "Stage III"], 'Univariate Cox Regression (PFS) Mean Trend Predictors Stage III')
+cat("<br>")
+unicox(mtDT[Stage == "Stage IV"], 'Univariate Cox Regression (PFS) Mean Trend Predictors Stage IV')
+```
+
+
+### Arbituary thresholds
+
+Here we can set thresholds to get an plug and chug way of seeing how the data might look.
+```{r thresholds}
+# Proportions
+meanDT[, c('prop.e','prop.c','prop.ec','prop.ve','prop.vc','prop.vec',"prop.E","prop.EM","prop.M","prop.SC","prop.tot","prop.totU", "prop.clust") := 
+         .(
+           ifelse(prop.e >= 1, 1, 0),
+           ifelse(prop.c >= 1, 1, 0),
+           ifelse(prop.ec >= 1, 1, 0),
+           ifelse(prop.ve >= 1, 1, 0),
+           ifelse(prop.vc >= 1, 1, 0),
+           ifelse(prop.vec >= 1, 1, 0),
+           ifelse(prop.E >= 1, 1, 0),
+           ifelse(prop.EM >= 1, 1, 0),
+           ifelse(prop.M >= 1, 1, 0),
+           ifelse(prop.SC >= 1, 1, 0),
+           ifelse(prop.tot >= 1, 1, 0),
+           ifelse(prop.totU >= 1, 1, 0),
+           ifelse(prop.clust >= 1, 1, 0)
+         )]
+
+# Subtractions
+meanDT[, c('sub.e','sub.c','sub.ec','sub.ve','sub.vc','sub.vec',"sub.E","sub.EM","sub.M","sub.SC","sub.tot","sub.totU", "sub.clust") := 
+         .(
+           ifelse(sub.e >= 0, 1, 0),
+           ifelse(sub.c >= 0, 1, 0),
+           ifelse(sub.ec >= 0, 1, 0),
+           ifelse(sub.ve >= 0, 1, 0),
+           ifelse(sub.vc >= 0, 1, 0),
+           ifelse(sub.vec >= 0, 1, 0),
+           ifelse(sub.E >= 0, 1, 0),
+           ifelse(sub.EM >= 0, 1, 0),
+           ifelse(sub.M >= 0, 1, 0),
+           ifelse(sub.SC >= 0, 1, 0),
+           ifelse(sub.tot >= 0, 1, 0),
+           ifelse(sub.totU >= 0, 1, 0),
+           ifelse(sub.clust >= 0, 1, 0)
+         )]
+
+# Normals
+meanDT[, c('nMean.e','nMean.c','nMean.ec','nMean.ve','nMean.vc','nMean.vec',"nMean.E","nMean.EM","nMean.M","nMean.SC","nMean.tot","nMean.totU") := 
+         .(
+           ifelse(nMean.e >= 1, 1, 0),
+           ifelse(nMean.c >= 1, 1, 0),
+           ifelse(nMean.ec >= 1, 1, 0),
+           ifelse(nMean.ve >= 1, 1, 0),
+           ifelse(nMean.vc >= 1, 1, 0),
+           ifelse(nMean.vec >= 1, 1, 0),
+           ifelse(nMean.E >= 1, 1, 0),
+           ifelse(nMean.EM >= 1, 1, 0),
+           ifelse(nMean.M >= 1, 1, 0),
+           ifelse(nMean.SC >= 1, 1, 0),
+           ifelse(nMean.tot >= 1, 1, 0),
+           ifelse(nMean.totU >= 1, 1, 0)
+         )]
+meanDT[, c('nMedian.e','nMedian.c','nMedian.ec','nMedian.ve','nMedian.vc','nMedian.vec',"nMedian.E","nMedian.EM","nMedian.M","nMedian.SC","nMedian.tot","nMedian.totU") := 
+         .(
+           ifelse(nMedian.e >= 1, 1, 0),
+           ifelse(nMedian.c >= 1, 1, 0),
+           ifelse(nMedian.ec >= 1, 1, 0),
+           ifelse(nMedian.ve >= 1, 1, 0),
+           ifelse(nMedian.vc >= 1, 1, 0),
+           ifelse(nMedian.vec >= 1, 1, 0),
+           ifelse(nMedian.E >= 1, 1, 0),
+           ifelse(nMedian.EM >= 1, 1, 0),
+           ifelse(nMedian.M >= 1, 1, 0),
+           ifelse(nMedian.SC >= 1, 1, 0),
+           ifelse(nMedian.tot >= 1, 1, 0),
+           ifelse(nMedian.totU >= 1, 1, 0)
+           )]
+```
+
+
+##### Mean
+```{r thresholdcox, results='asis', message=FALSE, warning=FALSE}
+unicox(meanDT[M == "M0"], 'Univariate Cox Regression (PFS) Mean Predictors M0')
+cat("<br>")
+unicox(meanDT[M == "M1"], 'Univariate Cox Regression (PFS) Mean Predictors M1')
+cat("<br>")
+unicox(meanDT[Stage == "Stage I"], 'Univariate Cox Regression (PFS) Mean Predictors Stage I')
+cat("<br>")
+unicox(meanDT[Stage == "Stage II"], 'Univariate Cox Regression (PFS) Mean Predictors Stage II')
+cat("<br>")
+unicox(meanDT[Stage == "Stage II" | Stage == "Stage I"], 'Univariate Cox Regression (PFS) Mean Predictors Stage I+II')
+cat("<br>")
+unicox(meanDT[Stage == "Stage III"], 'Univariate Cox Regression (PFS) Mean Predictors Stage III')
+cat("<br>")
+unicox(meanDT[Stage == "Stage IV"], 'Univariate Cox Regression (PFS) Mean Predictors Stage IV')
+```

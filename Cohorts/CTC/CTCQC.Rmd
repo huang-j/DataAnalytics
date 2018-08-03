@@ -1,0 +1,118 @@
+---
+title: "CTC QC"
+author: "Jonathan Huang"
+date: "5/7/2018"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Read In Data
+
+QC metrics for NGS CTC data. Looking at read depth at loci and at mutations.
+
+```{r readin, echo=FALSE, message=FALSE, warnings = FALSE}
+library(data.table)
+library(ggplot2)
+library(dplyr)
+library(stringr)
+
+CTC1 <- fread("CTC1.csv")
+CTC2 <- fread("CTC2.csv")
+CTC3 <- fread("CTC3.csv")
+CTC4 <- fread("CTC4.csv")
+PBMC1 <- fread("PBMC1.csv")
+PBMC2 <- fread("PBMC2.csv")
+PBMC3 <- fread("PBMC3.csv")
+Tissue <- fread("Tissue.csv")
+GL <- fread("Germline.csv")
+```
+
+## Functions
+
+Functions to process data
+
+```{r fxn, echo=FALSE}
+## tstrsplit
+## split 0/1/2:R,A1,A2:N
+splitVar <- function(dt){
+  dt[, c("refalts","counts","totalCount") := tstrsplit(`Unfiltered Variants`, ":")]
+  dt[, commas := str_count(counts, ",")]
+  maxAlts <- max(dt$commas) + 1
+  # create array to match max number of references
+  x <- c()
+  for (i in 1:maxAlts) {
+    x <- c(x, paste0("A", i))
+  }
+  dt[, eval(x) := tstrsplit(counts,",", fixed=TRUE)]
+  dt[, totalCount:=as.numeric(totalCount)]
+}
+
+# plot totalCounts
+# creates histogram of total counts + creates graphs of chrom/pos v counts to estimate total number of counts in per chrom 
+plotTotalCounts <- function(dt, sample){
+  dt[,"numChrom" := as.numeric(CHROM)]
+  dt[is.na(numChrom), numChrom := 23]
+  dt[,"chrompos":=as.factor(paste(LETTERS[numChrom],"-",POS))]
+  dt$chrompos <- factor(dt$chrompos, levels(dt$chrompos)) 
+  hist <- ggplot(dt, aes(totalCount)) + geom_histogram(bins=100, color="w hite", fill="blue") + labs(title = paste("Histogram of total counts in", sample))
+  plot(hist)
+  ## plots genome <- This will take a while to run
+  cp <- ggplot(dt, aes(x=chrompos, y=totalCount, fill=CHROM)) + geom_col() + labs(title = paste("Total Counts across whole genome in ", sample)) + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+  plot(cp)
+}
+# plot mutant allelic fraction for each mutation
+plotMAF <- function(dt, sample){
+  # melt and filter out NA
+  mdt <- melt(dt, measure.vars = colnames(dt)[grep("A[0-9]", colnames(dt))])
+  mdt <- mdt[!is.na(value) & variable != "A1"]
+  mdt[, "MAF" := as.numeric(value)/as.numeric(totalCount)]
+  hist <- ggplot(mdt, aes(MAF)) + geom_histogram(bins=100, color="white", fill="blue") + labs(title=paste("Histogram of MAF in ", sample))
+  plot(hist)
+}
+```
+
+## Plots
+
+```{r run, echo=FALSE}
+splitVar(CTC1)
+plotTotalCounts(CTC1, "CTC1")
+plotMAF(CTC1, "CTC1")
+
+splitVar(CTC2)
+plotTotalCounts(CTC2, "CTC2")
+plotMAF(CTC2, "CTC2")
+
+splitVar(CTC3)
+plotTotalCounts(CTC3, "CTC3")
+plotMAF(CTC3, "CTC3")
+
+splitVar(CTC4)
+plotTotalCounts(CTC4, "CTC4")
+plotMAF(CTC4, "CTC4")
+
+splitVar(PBMC1)
+plotTotalCounts(PBMC1, "PBMC1")
+plotMAF(PBMC1, "PBMC1")
+
+splitVar(PBMC2)
+plotTotalCounts(PBMC2, "PBMC2")
+plotMAF(PBMC2, "PBMC2")
+
+splitVar(PBMC3)
+plotTotalCounts(PBMC3, "PBMC3")
+plotMAF(PBMC3, "PBMC3")
+
+splitVar(Tissue)
+plotTotalCounts(Tissue, "Tissue")
+plotMAF(Tissue, "Tissue")
+
+splitVar(GL)
+plotTotalCounts(GL, "GL")
+plotMAF(GL, "GL")
+
+```

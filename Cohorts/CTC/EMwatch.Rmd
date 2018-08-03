@@ -1,0 +1,123 @@
+---
+title: "EM Watch"
+author: "Jonathan Huang"
+date: "6/21/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Plot change of EM and other 
+
+```{r setup2, echo=FALSE}
+library(data.table)
+library(plyr)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+library(stargazer)
+library(stringr)
+DTT <- fread("DTwTherapy.csv")
+```
+
+## Label Draws in Order
+
+You can also embed plots, for example:
+
+```{r draworders, echo=FALSE}
+updown <- function(a, b){
+  # a <- as.numeric(a)
+  # b <- as.numeric(b)
+  # print(a>b)
+  if (a > b) {
+    return("Increase")
+  } else if (a < b) {
+    return("Decrease")
+  } else if ( a == b) {
+    return("No Change")
+  }
+}
+setNA <- function(dt,x){
+  # print(head(dt))s
+  dt[is.na(get(x)), eval(x) := 0]
+}
+predictMonths <- function(dt, days, s, therapy){
+  temp <- dt[Patient.ID == str_replace(eval(s), "-.*", ""),
+             .(Patient.ID, Draw.ID, draw_date, t.start, response)]
+  temp <- temp[draw_date <= (temp[Draw.ID == eval(s), draw_date] + days)]
+  if(therapy == 1){
+    temp <- temp[t.start == temp[Draw.ID == eval(s), t.start] & response == "PD",.N]
+    ifelse(temp >= 1, return(1), return(0))
+  } else {
+    temp <- temp[response == "PD",.N]
+    ifelse(temp >= 1, return(1), return(0))
+  }
+}
+create2by2 <- function(dt, column, pred, M){
+  print(column)
+  mstage <- substitute(i.M == vars,list(vars=M))
+  a <- dt[eval(mstage) & eval(as.name(column)) == "Increase" & eval(as.name(pred)) == 1, .N]
+  b <- dt[eval(mstage) & eval(as.name(column)) != "Increase" & eval(as.name(pred)) == 1, .N]
+  c <- dt[eval(mstage) & eval(as.name(column)) == "Increase" & eval(as.name(pred)) == 0, .N]
+  d <- dt[eval(mstage) & eval(as.name(column)) != "Increase" & eval(as.name(pred)) == 0, .N]
+  m <- matrix(c(a,b,c,d),ncol = 2)
+  stargazer(m, type="text")
+  fisher.test(m)
+}
+
+DTT[, Draw.Num := str_split(Draw.ID, "-")[[1]][2], by=Draw.ID]
+DTT[, c("draw_date", "t.start") := .(as.Date(draw_date), as.Date(t.start))]
+DTT[, "pred3" := sapply(Draw.ID, function(x){predictMonths(DTT, 90, x, 1)})]
+D1 <- DTT[Patient.ID != "MS05" & Draw.Num == 1 & BTN == 1]
+D1[, c("b.perE", "b.perM", "b.perEM", "b.perSC") := .(perE, perM, perEM, perSC)]
+D1[, c("b.E", "b.M", "b.EM", "b.SC") := .(E, M, EM, SC)]
+D3 <- D1[, .(Patient.ID, b.E, b.M, b.EM, b.SC)]
+D1 <- D1[, .(Patient.ID, b.perE, b.perM, b.perEM, b.perSC)]
+
+D2 <- DTT[Patient.ID != "MS05" & Draw.Num == 2]
+
+DJ <- D2[D1, on="Patient.ID"]
+DJ <- DJ[!is.na(Draw.ID) & !is.na(b.perE)]
+lapply(c("b.perE", "b.perM", "b.perEM","perE", "perM", "perEM","perSC"), dt = DJ, setNA)
+DJ[, c("pE", "pEM", "pM","pSC") := .(mapply(updown, perE, b.perE),
+                                     mapply(updown, perEM, b.perEM),
+                                     mapply(updown, perM, b.perM),
+                                     mapply(updown, perSC, b.perSC))]
+DJ2 <- D3[D2, on="Patient.ID"]
+DJ2 <- DJ2[!is.na(Draw.ID) & !is.na(b.E)]
+lapply(c("b.E", "b.M", "b.EM", "b.SC","E", "M", "EM", "SC"), dt = DJ2, setNA)
+DJ2[, c("sE", "sEM", "sM","sSC") := .(mapply(updown, E, b.E),
+                                     mapply(updown, EM, b.EM),
+                                     mapply(updown, M, b.M),
+                                     mapply(updown, SC, b.SC))]
+```
+
+## Plot the stuff
+
+```{r plots, echo=FALSE}
+DJm1 <- DJ[i.M == "M1"]
+DJm1[, pred3 := factor(pred3)]
+ggplot(DJm1) + geom_point(aes(x="Baseline", y=b.perE), group=1) + geom_point(aes(x="Post", y=perE), group=1) + geom_segment(aes(x="Baseline", y=b.perE, xend="Post", yend=perE, color=pred3),group=1) + labs(y="CTC (Proportion)", x="E")
+
+ggplot(DJm1) + geom_point(aes(x="Baseline", y=b.perEM), group=1) + geom_point(aes(x="Post", y=perEM), group=1) + geom_segment(aes(x="Baseline", y=b.perEM, xend="Post", yend=perEM, color=pred3),group=1) + labs(y="CTC (Proportion)", x="EM")
+
+ggplot(DJm1) + geom_point(aes(x="Baseline", y=b.perM), group=1) + geom_point(aes(x="Post", y=perM), group=1) + geom_segment(aes(x="Baseline", y=b.perM, xend="Post", yend=perM, color=pred3),group=1) + labs(y="CTC (Proportion)", x="M")
+
+ggplot(DJm1) + geom_point(aes(x="Baseline", y=b.perSC), group=1) + geom_point(aes(x="Post", y=perSC), group=1) + geom_segment(aes(x="Baseline", y=b.perSC, xend="Post", yend=perSC, color=pred3),group=1) + labs(y="CTC (Proportion)", x="SC")
+```
+
+### Counts
+```{r counts, echo=FALSE}
+DJ2m1 <- DJ2[i.M == "M1"]
+DJ2m1[, pred3 := factor(pred3)]
+ggplot(DJ2m1) + geom_point(aes(x="Baseline", y=b.E), group=1) + geom_point(aes(x="Post", y=E), group=1) + geom_segment(aes(x="Baseline", y=b.E, xend="Post", yend=E, color=pred3),group=1) + labs(y="CTC (Proportion)", x="E")
+
+ggplot(DJ2m1) + geom_point(aes(x="Baseline", y=b.EM), group=1) + geom_point(aes(x="Post", y=EM), group=1) + geom_segment(aes(x="Baseline", y=b.EM, xend="Post", yend=EM, color=pred3),group=1) + labs(y="CTC (Proportion)", x="EM")
+
+ggplot(DJ2m1) + geom_point(aes(x="Baseline", y=b.M), group=1) + geom_point(aes(x="Post", y=M), group=1) + geom_segment(aes(x="Baseline", y=b.M, xend="Post", yend=M, color=pred3),group=1) + labs(y="CTC (Proportion)", x="M")
+
+ggplot(DJ2m1) + geom_point(aes(x="Baseline", y=b.SC), group=1) + geom_point(aes(x="Post", y=SC), group=1) + geom_segment(aes(x="Baseline", y=b.SC, xend="Post", yend=SC, color=pred3),group=1) + labs(y="CTC (Proportion)", x="SC")
+
+```

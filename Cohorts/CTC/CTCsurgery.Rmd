@@ -1,0 +1,75 @@
+---
+title: "CTC w/ Surgery"
+author: "Jonathan Huang"
+date: "4/5/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## CTC's day of surgery.
+
+Looks for some degree of correlation at the day of surgery compared with values at that day. Surgeries are grouped to the closest draw in either direction.
+
+```{r cars, echo=FALSE, message=FALSE}
+library(data.table)
+library(plyr)
+library(dplyr)
+library(survival)
+library(survminer)
+library(ggplot2)
+library(ggpubr)
+allct <- fread("AllCTCwnormals.csv")
+surg <- fread("ctcresectsurgeries.csv")
+surg[, type := NULL]
+allct[, c("draw_date","sample_date") := .(as.Date(draw_date),as.Date(draw_date))]
+surg[, c("draw_date", "surgery_date") := .(as.Date(surgery_date), as.Date(surgery_date))]
+
+# dt <- allct[surg, on=c("Patient.ID", "draw_date"), roll="nearest"]
+dt <- surg[allct, on=c("Patient.ID", "draw_date"), roll="nearest", nomatch=0]
+dt <- dt[!is.na(vec)]
+dt[, tframe := sample_date - surgery_date]
+dt2 <- dt[tframe >= -30 & tframe <= 30]
+dt2[, prog := as.factor(ifelse(response == "PD",  1, 0))]
+dt2 <- dt2[!grepl("lapar",Procedure)]
+```
+
+## Distributions
+
+```{r distr, echo=FALSE}
+plotdistri <- function(x,m,pred){
+  temp <- melt(x[,m, with=FALSE], id.vars=c(pred))
+  temp[, value:= ifelse(value > 200, 200,value)]
+  p <- ggplot(temp, aes(x=factor(get(pred)))) +
+          geom_point(aes_string(y='value',color=pred),position = position_jitterdodge(dodge.width = .7), group=1) + geom_boxplot(aes_string(y='value',fill=pred),alpha=.01, group=1) +
+          stat_compare_means(aes_string(y='value', group=pred), label="p.format") +
+          facet_grid(.~variable, scales="free") +
+          labs(title=paste("Distribution of CTC counts"), x=pred)
+  plot(p)
+}
+
+j <- c('tot', 'totU','prog')
+plotdistri(dt2, j, "prog")
+j <- c('E','EM','M','SC','numClust',"prog")
+plotdistri(dt2, j, "prog")
+j <- c('e','c','ec','ve','vc','vec',"prog")
+plotdistri(dt2, j, "prog")
+j <- c('e2','c2','ve2','vc2',"prog")
+plotdistri(dt2, j, "prog")
+
+# j <- c('nMean.tot', 'nMean.totU','prog')
+# plotdistri(dt2, j, "prog")
+# j <- c('nMean.E','nMean.EM','nMean.M','nMean.SC',"prog")
+# plotdistri(dt2, j, "prog")
+# j <- c('nMean.e','nMean.c','nMean.ec','nMean.ve','nMean.vc','nMean.vec',"prog")
+# plotdistri(dt2, j, "prog")
+# 
+# j <- c('nMedian.tot', 'nMedian.totU','prog')
+# plotdistri(dt2, j, "prog")
+# j <- c('nMedian.E','nMedian.EM','nMedian.M','nMedian.SC',"prog")
+# plotdistri(dt2, j, "prog")
+# j <- c('nMedian.e','nMedian.c','nMedian.ec','nMedian.ve','nMedian.vc','nMedian.vec',"prog")
+# plotdistri(dt2, j, "prog")
+```
