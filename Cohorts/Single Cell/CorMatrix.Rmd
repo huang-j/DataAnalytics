@@ -1,0 +1,383 @@
+---
+title: "Correlation Matrix"
+author: "Jonathan Huang"
+date: "1/8/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Correlation Matrix
+
+This document is geared toward making a correlation matrix between cells.
+Cells are filtered based on the cells that are shown in the TSNE from the Seurat objects.
+  
+The particular variable "CellLabs", which is used to annotate the graphs, is pulled directly from the TSNE. The clusters listed in this file are determined by PCA.
+
+Additional filtering is done to take certain genes out to stay parallel to the TSNE
+
+
+```{r corsetup, echo=FALSE}
+library(Hmisc)
+library(data.table)
+library(corrplot)
+library(ComplexHeatmap)
+library(dplyr)
+library(circlize)
+library(RColorBrewer)
+library(googleVis)
+## Color Palette
+Tissue.Pal = c("lowgrade" = "#00BA38", "highgrade" = "#619CFF", "pdac"="#F8766D")
+#sample.Pal = c("AM31" = "#B2DF8A", "AM86" = "#33A02C","AM48" = "#A6CEE3","AM72" = "#1F78B4","MK300"= "#FB9A99", "RS01" = "#E31A1C")
+sample.Pal = c("lowgrade_IPMN_1" = "#B2DF8A", "lowgrade_IPMN_2" = "#33A02C","highgrade_IPMN_1" = "#A6CEE3","highgrade_IPMN_2" = "#1F78B4","pdac_1"= "#FB9A99", "pdac_2" = "#E31A1C")
+cluster.Pal = c("0" = "#E5F5E0","1" ="royalblue", "2"="#FB6A4A", "3" ="#A1D99B" ,"4"="#FBB4AE","5"="#B3CDE3","6"="#CB181D","7"="#CCEBC5","8"="#31A354","9"="#DECBE4")
+
+## Imports the TSNE files for the lists of cells that were not thrown out.
+CellLabs <- read.csv("tsneLabelsv2.csv")
+rownames(CellLabs) <- CellLabs$CellId
+renameSamples <- function(x){
+  if(x == "AM31"){
+    return("lowgrade_IPMN_1")
+  }
+  if(x == "AM86"){
+    return("lowgrade_IPMN_2")
+  }
+  if(x == "AM48"){
+    return("highgrade_IPMN_1")
+  }
+  if(x == "AM72"){
+    return("highgrade_IPMN_2")
+  }
+  if(x == "MK300"){
+    return("pdac_1")
+  }
+  if(x == "RS01"){
+    return("pdac_2")
+  }
+}
+CellLabs$Sample <- sapply(CellLabs$Sample, renameSamples)
+
+
+
+## The files to be added, names are self-explanatory
+
+AM31 = as.data.table(read.csv('AM31-Combine-1to8_S1.counts.umiCounts.table.csv'))
+AM31[, CellId := paste("AM31",CellId, sep="_")]
+AM31 <- AM31[is.element(CellId, CellLabs$CellId)]
+AM31dtmelt <- melt(AM31, id.vars="CellId")
+# AM31dt[, value := ifelse(value > 0, 1, 0)]
+AM31dt <- dcast(AM31dtmelt, variable ~ CellId)
+AM31dt.null <- AM31dt[, variable:=NULL]
+AM31dt.null[, rSums:=rowSums(AM31dt.null)]
+AM31fdt <- AM31dt.null[rSums > 0]
+
+AM48 = as.data.table(read.csv('AM48_Combine_S1.counts.umiCounts.aboveBackground.table.csv'))
+AM48[, CellId := paste("AM48",CellId, sep="_")]
+AM48 <- AM48[is.element(CellId, CellLabs$CellId)]
+AM48dtmelt <- melt(AM48, id.vars="CellId")
+# AM48dt[, value := ifelse(value > 0, 1, 0)]
+AM48dt <- dcast(AM48dtmelt, variable ~ CellId)
+AM48dt.null <- AM48dt[, variable:=NULL]
+AM48dt.null[, rSums:=rowSums(AM48dt.null)]
+AM48fdt <- AM48dt.null[rSums > 0]
+
+MK300 = as.data.table(read.csv('MK300_Combine_S1.counts.umiCounts.aboveBackground.table.csv'))
+MK300[, CellId := paste("MK300",CellId, sep="_")]
+MK300 <- MK300[is.element(CellId, CellLabs$CellId)]
+MK300dtmelt <- melt(MK300, id.vars="CellId")
+# MK300dt[, value := ifelse(value > 0, 1, 0)]
+MK300dt <- dcast(MK300dtmelt, variable ~ CellId)
+MK300dt.null <- MK300dt[, variable:=NULL]
+MK300dt.null[, rSums:=rowSums(MK300dt.null)]
+MK300fdt <- MK300dt.null[rSums > 0]
+
+RS01 = as.data.table(read.csv('RS01-Combined_S1.counts.umiCounts.aboveBackground.table.csv'))
+RS01[, CellId := paste("RS01",CellId, sep="_")]
+RS01 <- RS01[is.element(CellId, CellLabs$CellId)]
+RS01dtmelt <- melt(RS01, id.vars="CellId")
+# RS01dt[, value := ifelse(value > 0, 1, 0)]
+RS01dt <- dcast(RS01dtmelt, variable ~ CellId)
+RS01dt.null <- RS01dt[, variable:=NULL]
+RS01dt.null[, rSums:=rowSums(RS01dt.null)]
+RS01fdt <- RS01dt.null[rSums > 0]
+
+AM72 = as.data.table(read.csv('AM72_Combine_S1.counts.umiCounts.aboveBackground.table.csv'))
+AM72[, CellId := paste("AM72",CellId, sep="_")]
+AM72 <- AM72[is.element(CellId, CellLabs$CellId)]
+AM72dtmelt <- melt(AM72, id.vars="CellId")
+AM72dt <- dcast(AM72dtmelt, variable ~ CellId)
+AM72dt.null <- AM72dt[, variable:=NULL]
+AM72dt.null[, rSums:=rowSums(AM72dt.null)]
+AM72fdt <- AM72dt.null[rSums > 0]
+
+AM86 = as.data.table(read.csv('AM86_combine_S1.counts.umiCounts.aboveBackground.table.csv'))
+AM86[, CellId := paste("AM86",CellId, sep="_")]
+AM86 <- AM86[is.element(CellId, CellLabs$CellId)]
+AM86dtmelt <- melt(AM86, id.vars="CellId")
+AM86dt <- dcast(AM86dtmelt, variable ~ CellId)
+AM86dt.null <- AM86dt[, variable:=NULL]
+AM86dt.null[, rSums:=rowSums(AM86dt.null)]
+AM86fdt <- AM86dt.null[rSums > 0]
+
+
+```
+
+
+```{r process, echo=FALSE}
+## creates correlation, joins to tsne clusters
+corAM31 <- cor(AM31fdt[,rSums:=NULL], method="pearson")
+#rcorAM31 <- rcorr(as.matrix(AM31fdt), type="pearson")
+corAM31merge <- merge(corAM31, CellLabs, by=0, all.x=TRUE)
+corAM31merge <- as.data.table(corAM31merge)
+corAM31merge[,Row.names:=NULL]
+
+corAM48 <- cor(AM48fdt[,rSums:=NULL], method="pearson")
+#rcorAM48 <- rcorr(as.matrix(AM48fdt), type="pearson")
+corAM48merge <- merge(corAM48, CellLabs, by=0, all.x=TRUE)
+corAM48merge <- as.data.table(corAM48merge)
+corAM48merge[,Row.names:=NULL]
+
+corMK300 <- cor(MK300fdt[,rSums:=NULL], method="pearson")
+#rcorMK300 <- rcorr(as.matrix(MK300fdt), type="pearson")
+corMK300merge <- merge(corMK300, CellLabs, by=0, all.x=TRUE)
+corMK300merge <- as.data.table(corMK300merge)
+corMK300merge[,Row.names:=NULL]
+
+corRS01 <- cor(RS01fdt[,rSums:=NULL], method="pearson")
+#rcorRS01 <- rcorr(as.matrix(RS01fdt), type="pearson")
+corRS01merge <- merge(corRS01, CellLabs, by=0, all.x=TRUE)
+corRS01merge <- as.data.table(corRS01merge)
+corRS01merge[,Row.names:=NULL]
+
+corAM72 <- cor(AM72fdt[,rSums:=NULL], method="pearson")
+corAM72merge <- merge(corAM72, CellLabs, by=0, all.x=TRUE)
+corAM72merge <- as.data.table(corAM72merge)
+corAM72merge[,Row.names:=NULL]
+
+corAM86 <- cor(AM86fdt[,rSums:=NULL], method="pearson")
+corAM86merge <- merge(corAM86, CellLabs, by=0, all.x=TRUE)
+corAM86merge <- as.data.table(corAM86merge)
+corAM86merge[,Row.names:=NULL]
+```
+
+## Plots
+  
+  
+  
+### Individiual Sample Plots
+
+These plots consist of plots of each sample.
+
+
+```{r plots, echo=FALSE}
+# corrplot(corAM31, method="color", order="hclust")
+exc <- c("Tissue.Type", "Cluster", "CellId", "Sample")
+haAM31 <- HeatmapAnnotation(corAM31merge[,.(Tissue.Type, Sample, Cluster)], col = list(Tissue.Type = Tissue.Pal, Sample = sample.Pal, Cluster = cluster.Pal))
+Heatmap(corAM31merge[,setdiff(names(corAM31merge), exc),with=FALSE], 
+        name="correlation", 
+        col=colorRamp2(c(0,1),c("white","blue")),
+        show_row_names = FALSE, 
+        show_column_names = FALSE,
+        top_annotation = haAM31)
+
+haAM48 <- HeatmapAnnotation(corAM48merge[,.(Tissue.Type, Sample, Cluster)],col = list(Tissue.Type = Tissue.Pal, Sample = sample.Pal, Cluster = cluster.Pal))
+# corrplot(corAM48, method="color", order="hclust")
+Heatmap(corAM48merge[,setdiff(names(corAM48merge), exc),with=FALSE], 
+        name="correlation",
+        col=colorRamp2(c(0,1),c("white","blue")), 
+        show_row_names = FALSE,
+        show_column_names = FALSE,
+        top_annotation = haAM48)
+
+haMK300 <- HeatmapAnnotation(corMK300merge[,.(Tissue.Type, Sample, Cluster)],col = list(Tissue.Type = Tissue.Pal, Sample = sample.Pal, Cluster = cluster.Pal))
+# corrplot(corMK300, method="color", order="hclust")
+Heatmap( corMK300merge[,setdiff(names(corMK300merge), exc),with=FALSE],
+         name="correlation",
+         col=colorRamp2(c(0,1),c("white","blue")),
+         show_row_names = FALSE,
+         show_column_names = FALSE,
+         top_annotation = haMK300 )
+
+haRS01 <- HeatmapAnnotation(corRS01merge[,.(Tissue.Type, Sample, Cluster)],col = list(Tissue.Type = Tissue.Pal, Sample = sample.Pal, Cluster = cluster.Pal))
+# corrplot(corRS01, method="color", order="hclust")
+Heatmap(corRS01merge[,setdiff(names(corRS01merge), exc),with=FALSE], 
+        name="correlation", 
+        col=colorRamp2(c(0,1),c("white","blue")),
+        show_row_names = FALSE, 
+        show_column_names = FALSE,
+        top_annotation = haRS01)
+
+haAM72 <- HeatmapAnnotation(corAM72merge[,.(Tissue.Type, Sample, Cluster)],col = list(Tissue.Type = Tissue.Pal, Sample = sample.Pal, Cluster = cluster.Pal))
+Heatmap(corAM72merge[,setdiff(names(corAM72merge), exc),with=FALSE], 
+        name="correlation", 
+        col=colorRamp2(c(0,1),c("white","blue")),
+        show_row_names = FALSE, 
+        show_column_names = FALSE,
+        top_annotation = haAM72)
+
+haAM86 <- HeatmapAnnotation(corAM86merge[,.(Tissue.Type, Sample, Cluster)],col = list(Tissue.Type = Tissue.Pal, Sample = sample.Pal, Cluster = cluster.Pal))
+Heatmap(corAM86merge[,setdiff(names(corAM86merge), exc),with=FALSE], 
+        name="correlation", 
+        col=colorRamp2(c(0,1),c("white","blue")),
+        show_row_names = FALSE, 
+        show_column_names = FALSE,
+        top_annotation = haAM86)
+```
+  
+  
+  
+### All Samples
+  
+  
+Takes a look at all samples at once.
+  
+  
+  
+```{r bind, echo=FALSE}
+## allsamp <- bind_rows(list(AM31, AM48, MK300, RS01))
+## alldtmelt <- melt(allsamp, id.vars="CellId")
+alldtmelt <- bind_rows(list(AM31dtmelt, AM48dtmelt, MK300dtmelt, RS01dtmelt, AM72dtmelt, AM86dtmelt))
+alldtcast <- dcast(alldtmelt, variable ~ CellId, value.var = "value")
+alldt.null <- alldtcast[, variable:=NULL]
+```
+
+```{r bindplot, echo=FALSE}
+corall <- cor(alldt.null)
+od = hclust(dist(corall))$order
+corall = corall[od, od]
+corallmerge <- merge(corall, CellLabs, by=0, all.x=TRUE)
+corallmerge <- as.data.table(corallmerge)
+corallmerge[, Cluster := as.factor(Cluster)]
+corallmerge[,Row.names:=NULL]
+
+haall <- HeatmapAnnotation(corallmerge[,.(Tissue.Type, Sample, Cluster)], col = list(Tissue.Type = Tissue.Pal, Sample = sample.Pal, Cluster = cluster.Pal))
+                           # annotation_legend_param = list(V3 = list(
+                           #   title = "Cluster",
+                           #   labels = c(0,1,2,3,4,5,6,7,8,9)
+                           # )))
+# corrplot(corRS01, method="color", order="hclust")
+Heatmap(corallmerge[,setdiff(names(corallmerge), exc),with=FALSE], 
+        name="correlation", 
+        col=colorRamp2(c(0,1),c("white","blue")),
+        show_row_names = FALSE, 
+        show_column_names = FALSE,
+        top_annotation = haall)
+```
+
+### Cluster by Cluster
+
+Look at individual clusters (e.g. cluster 0, cluster 3 etc).
+
+```{r clusters, echo=FALSE}
+
+## have to recreate the correlations
+lapply(c(0:9), function(x){
+  clustercells <- subset(CellLabs, Cluster == x)
+  dt <- alldtmelt[is.element(CellId, clustercells$CellId)]
+  dt <- dcast(dt, variable ~ CellId, value.var = "value")
+  corclust <- cor(dt[, variable:=NULL])
+  od = hclust(dist(corclust))$order
+  corclust = corclust[od, od]
+  corclustmerge <- merge(corclust, clustercells, by=0, all.x=TRUE)
+  corclustmerge <- as.data.table(corclustmerge)
+  corclustmerge[,Row.names:=NULL]
+  
+  ## plot
+  haall <- HeatmapAnnotation(corclustmerge[,.(Tissue.Type, Sample)], col = list(Tissue.Type = Tissue.Pal, Sample = sample.Pal))
+  Heatmap(corclustmerge[,setdiff(names(corclustmerge), exc),with=FALSE], 
+        name="correlation", 
+        col=colorRamp2(c(0,1),c("white","blue")),
+        show_row_names = FALSE, 
+        show_column_names = FALSE,
+        top_annotation = haall)
+  # print(paste("Cluster: ", x))
+})
+
+```
+
+### Manual Clusters
+
+```{r clustman, echo=FALSE}
+clustercells <- subset(CellLabs, Cluster == 9 | Cluster == 7)
+dt <- alldtmelt[is.element(CellId, clustercells$CellId)]
+dt <- dcast(dt, variable ~ CellId, value.var = "value")
+corclust <- cor(dt[, variable:=NULL])
+od = hclust(dist(corclust))$order
+corclust = corclust[od, od]
+corclustmerge <- merge(corclust, clustercells, by=0, all.x=TRUE)
+corclustmerge <- as.data.table(corclustmerge)
+corclustmerge[, Cluster := as.factor(Cluster) ]
+corclustmerge[,Row.names:=NULL]
+  
+## plot
+haall <- HeatmapAnnotation(corclustmerge[,.(Tissue.Type, Sample)], col = list(Tissue.Type=Tissue.Pal, Sample = sample.Pal))
+Heatmap(corclustmerge[,setdiff(names(corclustmerge), exc),with=FALSE], 
+        name="correlation", 
+        col=colorRamp2(c(0,1),c("white","blue")),
+        show_row_names = FALSE, 
+        show_column_names = FALSE,
+        top_annotation = haall)
+```
+
+### UMI and Gene count by Cluster
+  
+  
+UMI counts as a total per sample and genes per sample as well.
+For UMI, since each nUMI for each gene is far too many points, instead, this will be a sum and mean of counts per cell. 
+
+e.g. cell x in cluster y has a mean of n umi and has a total of m umi etc.
+
+note: median isn't used since it's always 0. Mean is number of Sum/nGene
+
+```{r counts, echo=FALSE, include=FALSE}
+## Add counts and median and mean per cell
+# AM31
+AM31[, c("nsum", "nGene") := .(rowSums(AM31[,2:ncol(AM31)]),
+                               Reduce('+', lapply(AM31[,2:ncol(AM31)], function(x) ifelse(x > 0, 1, 0)))
+                              )]
+AM31[, nmean := nsum/nGene]
+AM31counts <- AM31[, .(CellId, nsum, nmean, nGene)]
+
+# AM48
+AM48[, c("nsum", "nGene") := .(rowSums(AM48[,2:ncol(AM48)]),
+                               Reduce('+', lapply(AM48[,2:ncol(AM48)], function(x) ifelse(x > 0, 1, 0)))
+                              )]
+AM48[, nmean := nsum/nGene]
+AM48counts <- AM48[, .(CellId, nsum, nmean, nGene)]
+
+# MK300
+MK300[, c("nsum", "nGene") := .(rowSums(MK300[,2:ncol(MK300)]),
+                               Reduce('+', lapply(MK300[,2:ncol(MK300)], function(x) ifelse(x > 0, 1, 0)))
+                              )]
+MK300[, nmean := nsum/nGene]
+MK300counts <- MK300[, .(CellId, nsum, nmean, nGene)]
+
+# RS01
+RS01[, c("nsum", "nGene") := .(rowSums(RS01[,2:ncol(RS01)]),
+                               Reduce('+', lapply(RS01[,2:ncol(RS01)], function(x) ifelse(x > 0, 1, 0)))
+                              )]
+RS01[, nmean := nsum/nGene]
+RS01counts <- RS01[, .(CellId, nsum, nmean, nGene)]
+
+# AM72
+AM72[, c("nsum", "nGene") := .(rowSums(AM72[,2:ncol(AM72)]),
+                               Reduce('+', lapply(AM72[,2:ncol(AM72)], function(x) ifelse(x > 0, 1, 0)))
+                              )]
+AM72[, nmean := nsum/nGene]
+AM72counts <- AM72[, .(CellId, nsum, nmean, nGene)]
+
+# AM86
+AM86[, c("nsum", "nGene") := .(rowSums(AM86[,2:ncol(AM86)]),
+                               Reduce('+', lapply(AM86[,2:ncol(AM86)], function(x) ifelse(x > 0, 1, 0)))
+                              )]
+AM86[, nmean := nsum/nGene]
+AM86counts <- AM86[, .(CellId, nsum, nmean, nGene)]
+
+allsum <-  bind_rows(list(AM31counts, AM48counts, MK300counts, RS01counts, AM72counts, AM86counts))
+```
+
+```{r clusternplotplots, echo=FALSE, include=FALSE}
+allsum <- merge(allsum, CellLabs, on="CellId")
+```

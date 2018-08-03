@@ -1,0 +1,90 @@
+---
+title: "Single Cell Sankey"
+author: "Jonathan Huang"
+date: "4/11/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Sankey
+
+Creating Sankey diagram to find the composition of samples and how they group
+
+```{r data, echo=FALSE}
+library(Hmisc)
+library(data.table)
+library(dplyr)
+library(circlize)
+library(RColorBrewer)
+library(googleVis)
+## Color Palette
+Tissue.Pal = c("lowgrade" = "#00BA38", "highgrade" = "#619CFF", "pdac"="#F8766D")
+#sample.Pal = c("AM31" = "#B2DF8A", "AM86" = "#33A02C","AM48" = "#A6CEE3","AM72" = "#1F78B4","MK300"= "#FB9A99", "RS01" = "#E31A1C")
+sample.Pal = c("lowgrade_IPMN_1" = "#B2DF8A", "lowgrade_IPMN_2" = "#33A02C","highgrade_IPMN_1" = "#A6CEE3","highgrade_IPMN_2" = "#1F78B4","pdac_1"= "#FB9A99", "pdac_2" = "#E31A1C")
+cluster.Pal = c("0" = "#E5F5E0","1" ="royalblue", "2"="#FB6A4A", "3" ="#A1D99B" ,"4"="#FBB4AE","5"="#B3CDE3","6"="#CB181D","7"="#CCEBC5","8"="#31A354","9"="#DECBE4")
+
+## Imports the TSNE files for the lists of cells that were not thrown out.
+CellLabs <- read.csv("tsneLabelsv2.csv")
+rownames(CellLabs) <- CellLabs$CellId
+renameSamples <- function(x){
+  if(x == "AM31"){
+    return("LGD_IPMN_1")
+  }
+  if(x == "AM86"){
+    return("LGD_IPMN_2")
+  }
+  if(x == "AM48"){
+    return("HGD_IPMN_1")
+  }
+  if(x == "AM72"){
+    return("HGD_IPMN_2")
+  }
+  if(x == "MK300"){
+    return("PDAC_1")
+  }
+  if(x == "RS01"){
+    return("PDAC_2")
+  }
+}
+CellLabs$Sample <- sapply(CellLabs$Sample, renameSamples)
+
+CellLabs <- as.data.table(CellLabs)
+
+CellLabs <- CellLabs[Cluster != 4 & Cluster != 5 & Cluster != 7 & Cluster != 9]
+assignGroup <- function(x){
+  if(x == 0 | x == 3 | x == 8){
+    return("LGD_IPMN")
+  }
+  if(x == 1){
+    return("HGD_IPMN")
+  }
+  if(x == 2 | x == 6){
+    return("PDAC")
+  }
+}
+
+CellLabs[, group := sapply(Cluster, assignGroup)]
+
+weights <- CellLabs[, .(weight = .N), by=.(Sample,group)]
+```
+
+## Plot
+
+
+```{r plot, echo=FALSE}
+sankey <- gvisSankey(weights, from="Sample", to="group", weight="weight",
+                     option = list(
+                       sankey="{link: {colorMode: 'source'},
+                       node: {colors: ['#F8766D', '#D39200', '#93AA00', '#00BA38', '#00C19F', '#00B9E3', '#619CFF', '#DB72FB', '#FF61C3']}}"
+                     ))
+sankeyCorr <- gvisSankey(weights, from="Sample", to="group", weight="weight",
+                     option = list(
+                       sankey="{link: {colorMode: 'source'},
+                       node: {colors: ['#E31A1C', '#F8766D', '#619CFF', '#00BA38', '#FB9A99', '#B2DF8A', '#A6CEE3', '#1F78B4', '#33A02C']}}"
+                     ))
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

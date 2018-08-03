@@ -1,0 +1,257 @@
+---
+title: "Further CTC Analysis - Therapy and t based"
+author: "Jonathan Huang"
+date: "1/13/2018"
+output: html_document
+---
+
+```{r setup, echo=FALSE, message=FALSE}
+library(knitr)
+library(rmarkdown)
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## Exploratory Analysis of CTC data (Mean and Trends)
+
+Takes specific data from the CTCAnalysis files which are then processed by a python script to find means and/or trends etc. that take place within a certain timeframe (t) and therapy (T). Due to the stricter conditions, a large portion of draws will not be used and points will likely be patients.
+
+Files needed: A csv output from python script
+
+```{r DataSetup, echo=FALSE, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(data.table)
+library(survival)
+library(survminer)
+library(stargazer)
+# read files
+meanPred <- fread("meanPreds.csv")
+trendPred <- fread("trendPreds.csv")
+mtPred <- fread("mtPreds.csv")
+CTCdemo <- fread("CTCdemo2.csv")
+setkey(CTCdemo, Patient.ID)
+CTCdemo <- unique(CTCdemo)
+CTCdemo[,c('T','N','M','Stage') := .(gsub('[cp]','',T),
+                                     gsub('[cp]','',N),
+                                     gsub('[cp]','',M),
+                                     gsub('[AB]','',Stage)
+                                     )
+        ]
+
+# Join data
+meanDT <- CTCdemo[meanPred, on="Patient.ID"]
+trendDT <- CTCdemo[trendPred, on="Patient.ID"]
+mtDT <- CTCdemo[mtPred, on="Patient.ID"]
+meanDT[, i.PFS := as.numeric(gsub(' .*', '', i.PFS))]
+
+# The progression data is wrong for trendDT (as it finds the trend between them). Left join to meanDT
+trendDT[, Prog:=NULL]
+trendDT <- meanDT[,.(Patient.ID, Prog)][trendDT, on="Patient.ID"]
+trendDT[, i.PFS := as.numeric(gsub(' .*','',i.PFS))/8.64e+13]
+
+mtDT[, Prog:=NULL]
+mtDT <- meanDT[,.(Patient.ID, Prog)][mtDT, on="Patient.ID"]
+mtDT[, i.PFS := as.numeric(gsub(' .*','',i.PFS))/8.64e+13]
+
+# add M's to totCTC
+# meanDT[, totCTC.M := totCTC + i.M]
+# trendDT[, totCTC.M := totCTC + i.M]
+
+```
+
+## Models
+
+Aim to model the data in some way or form
+Will be looking at different models these include but are not limited to
+
+    * Logistic Regression
+    * Cox Proportional Hazards
+
+Likely will need to subset into smaller groups, which will lead to very few points.
+
+Definitions of variables:
+
+```{r, echo=FALSE, results='asis'}
+type <- matrix(c("E","EM","M","SC","U","Epithelial","Transition","Mesenchymal","Stem Cells","Unlabeled", "CK+/EpCAM+", 'Vim+, CK+/EpCAM+', "Vim+","CD133+, CK+/EpCAM+",""), ncol = 3)
+colnames(type) <- c("Letter", "Cell Type", "Definition")
+type <- as.data.table(type)
+stargazer(type, type = "html", summary=FALSE, title="Cell Type Classification")
+
+breakdown <- matrix(c("c","e","v","s","CK+","EpCAM+","Vim+","CD133+"), ncol=2)
+colnames(breakdown) <- c("Letter", "Biomarker")
+breakdown <- as.data.table(breakdown)
+stargazer(breakdown, type="html", summary=FALSE, title="Biomarker Abbreviations")
+```
+
+### Initial Models (Pre-subset)
+
+Looking at univariate regression analysis for entire group
+
+#### Logit
+
+Order of graphs is the same as the order in the console
+
+mean Predictions
+```{r meanlogitmodels, echo=FALSE, message=FALSE, warning=FALSE}
+lapply(meanDT[,17:28], function(X){
+  ggplot(meanDT, aes(x = X, y=Prog)) + geom_point() + geom_smooth(method = "glm", method.args=list(family = "binomial"), se=FALSE)
+})
+```
+  
+  
+  trend Predictions
+```{r trendlogitmodels, echo=FALSE, message=FALSE, warning=FALSE}
+lapply(trendDT[,18:29], function(X){
+  ggplot(trendDT, aes(x = X, y=Prog)) + geom_point() + geom_smooth(method = "glm", method.args=list(family = "binomial"), se=FALSE)
+})
+```
+  
+  
+  mean trend predictions
+  
+```{r mtpred, echo=FALSE, message=FALSE, warnings=FALSE}
+lapply(mtDT[,18:29], function(X){
+  ggplot(mtDT, aes(x = X, y=Prog)) + geom_point() + geom_smooth(method = "glm", method.args=list(family = "binomial"), se=FALSE)
+})
+```
+  
+  
+#### Univariate Cox
+  
+One point to consider in these CPH models is that on a few patients, the patient actually did progress, but it's not listed. This is due to the fact that in this case we censored all patients at 180 days past the last follow-up we have on file.  
+
+
+  
+```{r unisetup, echo=FALSE, message=FALSE, warning=FALSE}
+#vars <- c('e','c','ec','ve','vc','vec','s','vs','cs','ves','vcs','ecs','vecs',"E","EM","i.M","SC","totCTC")
+vars <- c('e','c','ec','ve','vc','vec',"E","EM","i.M","SC","totCTC","numClust")
+unicox <- function(DT, tTitle){
+  univ_formulas <- sapply(vars, function(x) as.formula(paste('Surv(i.PFS, Prog)~', x)))
+  univ_models <- lapply( univ_formulas, function(x){coxph(x, data = DT)})
+  univ_results <- lapply(univ_models,
+                       function(x){ 
+                          x <- summary(x)
+                          p.value<-signif(x$wald["pvalue"], digits=3)
+                          wald.test<-signif(x$wald["test"], digits=3)
+                          beta<-signif(x$coef[1], digits=2);#coeficient beta
+                          HR <-signif(x$coef[2], digits=2);#exp(beta)
+                          HR.confint.lower <- signif(x$conf.int[,"lower .95"], 3)
+                          HR.confint.upper <- signif(x$conf.int[,"upper .95"],3)
+                          HR <- paste0(HR, " (", 
+                                       HR.confint.lower, "-", HR.confint.upper, ")")
+                          res<-c(beta, HR, wald.test, p.value)
+                          names(res)<-c("beta", "HR (95% CI for HR)", "wald.test", 
+                                        "p.value")
+                          return(res)
+                          #return(exp(cbind(coef(x),confint(x))))
+                         })
+  res <- t(as.data.frame(univ_results, check.names = TRUE))
+  ## as.data.frame(res)
+  stargazer(res, type = 'html', title=tTitle) 
+}
+
+```
+
+  
+  
+##### Mean
+```{r meanunisetup, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+unicox(meanDT, 'Univariate Cox Regression (PFS) Mean Predictors')
+```
+  
+  
+  
+  
+  
+##### Trend
+```{r trendunisetup, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+unicox(trendDT, 'Univariate Cox Regression (PFS) Trend Predictors')
+```
+  
+  
+  
+##### Mean Trend
+```{r mtunisetup, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+unicox(mtDT, 'Univariate Cox Regression (PFS) Mean Trend Predictors')
+```
+  
+### Subsets
+
+Subsetting the groups
+
+#### Logit
+  
+  
+low counts  
+  
+
+#### Cox
+  
+  
+  
+  
+##### Mean
+```{r meansubsetcox, results='asis', message=FALSE, warning=FALSE}
+unicox(meanDT[gender == "Male"], 'Univariate Cox Regression (PFS) Mean Predictors Male')
+cat("<br>")
+unicox(meanDT[gender == "Female"], 'Univariate Cox Regression (PFS) Mean Predictors Female')
+cat("<br>")
+unicox(meanDT[M == "M0"], 'Univariate Cox Regression (PFS) Mean Predictors M0')
+cat("<br>")
+unicox(meanDT[M == "M1"], 'Univariate Cox Regression (PFS) Mean Predictors M1')
+cat("<br>")
+unicox(meanDT[Stage == "Stage I"], 'Univariate Cox Regression (PFS) Mean Predictors Stage I')
+cat("<br>")
+unicox(meanDT[Stage == "Stage II"], 'Univariate Cox Regression (PFS) Mean Predictors Stage II')
+cat("<br>")
+unicox(meanDT[Stage == "Stage II" | Stage == "Stage I"], 'Univariate Cox Regression (PFS) Mean Predictors Stage I+II')
+cat("<br>")
+unicox(meanDT[Stage == "Stage III"], 'Univariate Cox Regression (PFS) Mean Predictors Stage III')
+cat("<br>")
+unicox(meanDT[Stage == "Stage IV"], 'Univariate Cox Regression (PFS) Mean Predictors Stage IV')
+```
+  
+  
+  
+  
+  
+##### Trend
+```{r trendsubsetcox, results='asis', message=FALSE, warning=FALSE}
+unicox(trendDT[gender == "Male"], 'Univariate Cox Regression (PFS) Trend Predictors Male')
+cat("<br>")
+unicox(trendDT[gender == "Female"], 'Univariate Cox Regression (PFS) Trend Predictors Female')
+cat("<br>")
+unicox(trendDT[M == "M0"], 'Univariate Cox Regression (PFS) Trend Predictors M0')
+cat("<br>")
+unicox(trendDT[M == "M1"], 'Univariate Cox Regression (PFS) Trend Predictors M1')
+cat("<br>")
+unicox(trendDT[Stage == "Stage I"], 'Univariate Cox Regression (PFS) Trend Predictors Stage I')
+cat("<br>")
+unicox(trendDT[Stage == "Stage II"], 'Univariate Cox Regression (PFS) Trend Predictors Stage II')
+cat("<br>")
+unicox(trendDT[Stage == "Stage II" | Stage == "Stage I"], 'Univariate Cox Regression (PFS) Trend Predictors Stage I+II')
+cat("<br>")
+unicox(trendDT[Stage == "Stage III"], 'Univariate Cox Regression (PFS) Trend Predictors Stage III')
+cat("<br>")
+unicox(trendDT[Stage == "Stage IV"], 'Univariate Cox Regression (PFS) Trend Predictors Stage IV')
+```
+
+##### Mean Trend
+```{r mtsubsetcox, results='asis', message=FALSE, warning=FALSE}
+unicox(mtDT[gender == "Male"], 'Univariate Cox Regression (PFS) Mean Trend Predictors Male')
+cat("<br>")
+unicox(mtDT[gender == "Female"], 'Univariate Cox Regression (PFS) Mean Trend Predictors Female')
+cat("<br>")
+unicox(mtDT[M == "M0"], 'Univariate Cox Regression (PFS) Mean Trend Predictors M0')
+cat("<br>")
+unicox(mtDT[M == "M1"], 'Univariate Cox Regression (PFS) Mean Trend Predictors M1')
+cat("<br>")
+unicox(mtDT[Stage == "Stage I"], 'Univariate Cox Regression (PFS) Mean Trend Predictors Stage I')
+cat("<br>")
+unicox(mtDT[Stage == "Stage II"], 'Univariate Cox Regression (PFS) Mean Trend Predictors Stage II')
+cat("<br>")
+unicox(mtDT[Stage == "Stage II" | Stage == "Stage I"], 'Univariate Cox Regression (PFS) Mean Trend Predictors Stage I+II')
+cat("<br>")
+unicox(mtDT[Stage == "Stage III"], 'Univariate Cox Regression (PFS) Mean Trend Predictors Stage III')
+cat("<br>")
+unicox(mtDT[Stage == "Stage IV"], 'Univariate Cox Regression (PFS) Mean Trend Predictors Stage IV')
+```

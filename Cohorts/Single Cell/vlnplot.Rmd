@@ -1,0 +1,47 @@
+---
+title: "To Plot CTRL-C CTRL-V"
+author: "Jonathan Huang"
+date: "3/23/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## To make those Violin Plots
+
+This is violin plot. Violins are string instruments. For more details on using violins, please visit your local music school.
+
+### CTRL-C CTRL-V THIS STUFF
+make sure you run the Seurat stuff first.
+
+Edit the labs field to change what you want to call the label
+```{r code, include=FALSE}
+library(ggplot2)
+data <- dat@meta.data
+
+### Basic stuff
+# nGene
+nG <- ggplot(data, aes(x="nGene", y=nGene)) + geom_violin(fill="#F8766D") +
+      labs(x="")
+# nUMI
+nU <- ggplot(data, aes(x="nUMI", y=log2(nUMI))) + geom_violin(fill="#00BA38") +
+      labs(x="", y=expression(paste("nUMI ","(", "log"[2],")")))
+# mitochondrial
+nM <- ggplot(data, aes(x="pct.mit", y=pct.mit)) + geom_violin(fill="#619CFF") +
+      labs(x="")
+nG
+nU
+nM
+
+medG <- mean(data$nGene)
+medU <- mean(data$nUMI)
+medM <- mean(data$pct.mit)
+
+print(paste("median nGene:",medG))
+print(paste("median nUMI:",medU))
+print(paste("median pct.mit:",medM))
+
+```
+
