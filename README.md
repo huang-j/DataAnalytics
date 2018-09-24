@@ -17,7 +17,7 @@ NGS
 
 Work with NGS sequencing.
 
-Unresectable
+Cohorts
 ==========
 
-Work on unresectable cohort.
+Clinical Cohort analysis
