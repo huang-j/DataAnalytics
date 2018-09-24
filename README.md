@@ -5,7 +5,7 @@ This repository is serves as a place to hold on to my scratch and trial work for
 App
 ===
 
-My work with developing front analysis for UI app. Most work done in JSFiddle
+My work with developing frontend analysis for UI app. Most work done in JSFiddle
 
 Highcharts
 ==========
