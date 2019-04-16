@@ -38,60 +38,59 @@ if [ -z "${b}" ]; then
     #  b="Agilent/CREv2/S30409818_Covered.bed"
 fi
 SECONDS=0
-echo "d = ${d}" > log.txt
-echo "l = ${l}" >> log.txt
-echo "b = ${b}" >> log.txt
+echo "d = ${d}" > ${l%.txt}_log.txt
+echo "l = ${l}" >> ${l%.txt}_log.txt
+echo "b = ${b}" >> ${l%.txt}_log.txt
 
 SurecallTrimer="Agilent/SurecallTrimmer_v4.0.1.jar"
 LocatIt="Agilent/LocatIt_v4.0.1.jar"
 
-echo "Trimming fastq" >> log.txt
+echo "Trimming fastq" >> ${l%.txt}_log.txt
 mkdir ${d}/Trimmed
 for s in $(cat ${l}); do
-    echo "Sample input: ${s}" >> log.txt
+    echo "Sample input: ${s}" >> ${l%.txt}_log.txt
     if [ ! -f ${d}/Trimmed/${s}/${s}_R1_trim.fastq.gz ] ; then
         inputR1=${d}/fastq_files/${s}_R1_001.fastq.gz
         inputR3=${d}/fastq_files/${s}_R3_001.fastq.gz
 
-        java -jar ${SurecallTrimer} -fq1 ${inputR1} -fq2 ${inputR3} -xt -out_loc ${d}/Trimmed/${s}/ >> log.txt
+        java -jar ${SurecallTrimer} -fq1 ${inputR1} -fq2 ${inputR3} -xt -out_loc ${d}/Trimmed/${s}/ >> ${l%.txt}_log.txt
         mv "${d}/Trimmed/${s}/${s}"*"_R1"*".fastq.gz" "${d}/Trimmed/${s}/${s}_R1_trim.fastq.gz"
         mv "${d}/Trimmed/${s}/${s}"*"_R3"*".fastq.gz" "${d}/Trimmed/${s}/${s}_R3_trim.fastq.gz"
     else 
-       echo "File already trimmed" >> log.txt
+       echo "File already trimmed" >> ${l%.txt}_log.txt
     fi
     duration=$((${SECONDS}/60))
     # echo "Time elapsed: ${duration} minutes"
-    echo "Time elapsed: ${duration} minutes" >> log.txt 
+    echo "Time elapsed: ${duration} minutes" >> ${l%.txt}_log.txt 
 done
-
-echo "Aligning" >> log.txt
-for s in $(cat ${l}); do
-    echo "Sample input: ${s}" >> log.txt
-    if [ ! -f ${s}.bam ] || [ ! -f ${d}/Bams/${s}/${s}.bam ] ; then
-        ## can edit number of threads based on system. Should probably update to around 4-6 
-        bwa mem -t 6 -M -I 200,100 -B 4 -A 1.0 -w 100 -k 19 -R "@RG\tID:${s}\tSM:${s}\tLB:AgilentSureCall\tPL:Illumina\tPU:Unknown" ref/hg19_k/hg19.fasta ${d}/Trimmed/${s}/${s}_R1_trim.fastq.gz ${d}/Trimmed/${s}/${s}_R3_trim.fastq.gz | \
-	samtools sort -q -o ${s}.bam -
-    else
-        echo "File already aligned" >> log.txt
-    fi
-    duration=$((${SECONDS}/60))
-    # echo "Time elapsed: ${duration} minutes"
-    echo "Time elapsed: ${duration} minutes" >> log.txt
-done
-
-echo "Processing Barcodes" >> log.txt
 mkdir ${d}/Bams
+mkdir ${d}/Bams/${s}  
+echo "Aligning" >> ${l%.txt}_log.txt
+for s in $(cat ${l}); do
+    echo "Sample input: ${s}" >> ${l%.txt}_log.txt
+    if [ ! -f ${s}.bam ] || [ ! -f ${d}/Bams/${s}/${s}.bam ] ; then
+	mkdir ${d}/tmp
+        ## can edit number of threads based on system. Should probably update to around 4-6 
+        ## bwa mem -t 6 -M -I 200,100 -B 4 -A 1.0 -w 100 -k 19 -R "@RG\tID:${s}\tSM:${s}\tLB:AgilentSureCall\tPL:Illumina\tPU:Unknown" ref/hg19_k/hg19.fasta ${d}/Trimmed/${s}/${s}_R1_trim.fastq.gz ${d}/Trimmed/${s}/${s}_R3_trim.fastq.gz | samtools sort -o ${d}/Bams/${s}/${s}.bam -
+        bwa mem -t 6 -M -R "@RG\tID:${s}\tSM:${s}\tLB:AgilentSureCall\tPL:Illumina\tPU:Unknown" ref/hg19_k/hg19.fasta ${d}/Trimmed/${s}/${s}_R1_trim.fastq.gz ${d}/Trimmed/${s}/${s}_R3_trim.fastq.gz | samtools sort -n -T ${d}/tmp/${s}.tmp.bam -@ 6 -o ${d}/Bams/${s}/${s}.bam -
+    else
+        echo "File already aligned" >> ${l%.txt}_log.txt
+    fi
+    duration=$((${SECONDS}/60))
+    # echo "Time elapsed: ${duration} minutes"
+    echo "Time elapsed: ${duration} minutes" >> ${l%.txt}_log.txt
+done
+
+echo "Processing Barcodes" >> ${l%.txt}_log.txt
 for s in $(cat ${l}); do
     if [ ! -f ${d}/Bams/${s}.umi.bam ] ; then
         inputR2=${d}/fastq_files/${s}_R2_001.fastq.gz
     
-        mkdir ${d}/Bams/${s}
-        mv ${s}.bam ${d}/Bams/${s}/${s}.bam
+        # mv ${s}.bam ${d}/Bams/${s}/${s}.bam
 
         java -Xmx100G -jar ${LocatIt} \
         -X ${d}/temp \
         -q 0 \
-# m is for family
         -m 1 \
         -U \
         -IB \
@@ -102,16 +101,19 @@ for s in $(cat ${l}); do
         -l ${b} \
         -o ${d}/Bams/${s}/${s}.umi.bam \
         ${d}/Bams/${s}/${s}.bam \
-        ${inputR2} >> log.txt
+        ${inputR2} >> ${l%.txt}_log.txt
 # keeps the old bam (non-barcoded)
     else
-	echo "Already processed barcodes" >> log.txt
+	echo "Already processed barcodes" >> ${l%.txt}_log.txt
     fi
-    if [ ! -f ${d}/Bams/${s}/${s}.umi.bam ] ; then
-	echo "Sorting..." >> log.txt
-    	samtools sort -T ~/tmp/${s}tmp.bam -o ${d}/Bams/${s}/${s}.umi.sorted.bam ${d}/Bams/${s}/${s}.umi.bam
-    	rm ${d}/Bams/${s}/${s}.umi.bam
+    if [ ! -f ${d}/Bams/${s}/${s}.umi.sorted.bam ] ; then
+	echo "Sorting..." >> ${l%.txt}_log.txt
+    	samtools sort -T ~/tmp/${s}tmp.bam -@ 6 -o ${d}/Bams/${s}/${s}.umi.sorted.bam ${d}/Bams/${s}/${s}.umi.bam
+	samtools index ${d}/Bams/${s}/${s}.umi.sorted.bam
+	if [ -f ${d}/Bams/${s}/${s}.umi.sorted.bam ] ; then
+    		rm ${d}/Bams/${s}/${s}.umi.bam
+	fi
     fi
     duration=$((${SECONDS}/60))
-    echo "Time elapsed: ${duration} minutes" >> log.txt
+    echo "Time elapsed: ${duration} minutes" >> ${l%.txt}_log.txt
 done
